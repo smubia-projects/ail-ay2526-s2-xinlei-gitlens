@@ -92,10 +92,29 @@ const ANALYSIS_SCHEMA = {
   required: ["answer_markdown", "highlights", "related"],
 };
 
+async function callGemini(params: any, maxRetries = 3): Promise<any> {
+  let retryCount = 0;
+  while (retryCount < maxRetries) {
+    try {
+      return await getAI().models.generateContent(params);
+    } catch (err: any) {
+      const isUnavailable = err.message?.includes("503") || err.message?.includes("UNAVAILABLE") || err.status === 503;
+      if (isUnavailable && retryCount < maxRetries - 1) {
+        retryCount++;
+        const delay = Math.pow(2, retryCount) * 1000;
+        console.warn(`Gemini API unavailable (503). Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export const getRepoOverview = async (fileList: string[], context?: string): Promise<RepoOverview> => {
   console.time("getRepoOverview");
   try {
-    const response = await getAI().models.generateContent({
+    const response = await callGemini({
       model: "gemini-3-flash-preview",
       contents: `Analyze the following file list and project context to provide a high-level structural overview of the repository:
       
@@ -122,13 +141,19 @@ export const analyzeCode = async (
   currentFile: { path: string; content: string } | null,
   fileList: string[],
   overview: RepoOverview | null,
-  useFlash: boolean = false
+  useFlash: boolean = false,
+  snippets: any[] = []
 ): Promise<AnalysisResult> => {
   console.time("analyzeCode");
   const model = useFlash ? "gemini-3-flash-preview" : "gemini-3.1-pro-preview";
+  
   try {
     const contentWithLines = currentFile?.content
       ? currentFile.content.split('\n').map((line, i) => `${i + 1}: ${line}`).join('\n')
+      : 'N/A';
+
+    const snippetsContext = snippets.length > 0 
+      ? snippets.map(s => `FILE: ${s.path} (Lines ${s.startLine}-${s.endLine}):\n${s.content}`).join('\n\n---\n\n')
       : 'N/A';
 
     const systemInstruction = `
@@ -136,21 +161,21 @@ export const analyzeCode = async (
       
       CRITICAL RULES:
       1. DO NOT assume everything is in the current file.
-      2. USE THE 'FILES IN REPO' LIST to identify where specific logic (like API endpoints, routes, or hooks) is actually implemented.
-      3. PRIORITIZE CODE FILES (e.g., .ts, .tsx, .js, .py, .go) in the 'highlights' array. Avoid documentation files like README.md unless they are the only source of information.
-      4. If the user asks about an endpoint like '/api/get_limit' and it's not in the current file, check the file list for paths like 'src/app/api/get_limit/route.ts' and include them in 'highlights'.
+      2. USE THE 'RELEVANT CODE SNIPPETS' and 'FILES IN REPO' list to identify where specific logic is actually implemented.
+      3. PRIORITIZE CODE FILES (e.g., .ts, .tsx, .js, .py, .go) in the 'highlights' array.
+      4. If the user asks about an endpoint or logic that's not in the current file, check the provided snippets and file list.
       5. If you don't have the content for a file but know it's relevant, include it in 'highlights' with start=1 and end=1.
-      6. If you ARE analyzing the current file content, you MUST provide EXACT line numbers for the 'start' and 'end' properties. Do not guess. If you are unsure, search the provided text for the function name or keyword.
+      6. If you ARE analyzing the current file content or a provided snippet, you MUST provide EXACT line numbers for the 'start' and 'end' properties.
       7. Provide the 'highlights' and 'related' arrays pointing to these files so the user can navigate to them.
-      8. The 'start' and 'end' lines in your response MUST be accurate relative to the content provided if the file is the current open file.
     `;
 
-    const response = await getAI().models.generateContent({
+    const response = await callGemini({
       model: model,
       contents: {
         parts: [
           { text: `REPO OVERVIEW: ${overview ? JSON.stringify(overview) : 'N/A'}` },
           { text: `CURRENT OPEN FILE (${currentFile?.path || 'None'}): \n\n${contentWithLines}` },
+          { text: `RELEVANT CODE SNIPPETS (FROM SEMANTIC SEARCH):\n\n${snippetsContext}` },
           { text: `FILES IN REPO (TOTAL ${fileList.length}): ${fileList.slice(0, 1000).join(", ")}` },
           { text: `USER QUESTION: ${query}` }
         ]
@@ -163,14 +188,16 @@ export const analyzeCode = async (
     });
 
     const jsonStr = response.text?.trim() || '{}';
-    return JSON.parse(jsonStr) as AnalysisResult;
-  } finally {
     console.timeEnd("analyzeCode");
+    return JSON.parse(jsonStr) as AnalysisResult;
+  } catch (err: any) {
+    console.timeEnd("analyzeCode");
+    throw err;
   }
 };
 
 export const explainSelection = async (selection: string, filePath: string, fullContent: string): Promise<string> => {
-  const response = await getAI().models.generateContent({
+  const response = await callGemini({
     model: "gemini-3-flash-preview",
     contents: `The user selected this code in "${filePath}":\n\n\`\`\`\n${selection}\n\`\`\`\n\nExplain this selection deeply within the context of the file: \n\n${fullContent.slice(0, 8000)}`,
     config: {
@@ -181,7 +208,7 @@ export const explainSelection = async (selection: string, filePath: string, full
 };
 
 export const getFunctionFlow = async (functionName: string, fileContent: string): Promise<string> => {
-  const response = await getAI().models.generateContent({
+  const response = await callGemini({
     model: "gemini-3-flash-preview",
     contents: `Trace the data flow and call hierarchy for "${functionName}" in this code:\n\n${fileContent}`,
     config: {
@@ -210,7 +237,7 @@ export const getSymbolDependencies = async (
   fileList: string[],
   overview: RepoOverview | null
 ): Promise<any> => {
-  const response = await getAI().models.generateContent({
+  const response = await callGemini({
     model: "gemini-3-flash-preview",
     contents: `Analyze the dependencies for the symbol "${symbolName}" in file "${filePath}". 
     Identify what other functions/files it calls and what (if identifiable from the file list) might call it.
@@ -263,7 +290,7 @@ export const analyzeFileSymbols = async (
   filename: string,
   content: string
 ): Promise<any[]> => {
-  const response = await getAI().models.generateContent({
+  const response = await callGemini({
     model: "gemini-3-flash-preview",
     contents: `Analyze this file and identify all major functions, classes, or exported variables. 
     For each, provide:
@@ -306,7 +333,7 @@ export const getUsageExamples = async (
 ): Promise<any[]> => {
   if (usages.length === 0) return [];
 
-  const response = await getAI().models.generateContent({
+  const response = await callGemini({
     model: "gemini-3-flash-preview",
     contents: `Analyze these code snippets where the symbol "${symbolName}" is used.
     For each snippet, extract:
@@ -338,14 +365,28 @@ export const getUsageExamples = async (
   return JSON.parse(jsonStr);
 };
 export const embedText = async (text: string): Promise<number[]> => {
-  try {
-    const response = await getAI().models.embedContent({
-      model: "gemini-embedding-001",
-      contents: [{ parts: [{ text }] }],
-    });
-    return response.embeddings[0].values;
-  } catch (err) {
-    console.error("Embedding failed:", err);
-    return [];
+  const maxRetries = 3;
+  let retryCount = 0;
+
+  while (retryCount < maxRetries) {
+    try {
+      const response = await getAI().models.embedContent({
+        model: "gemini-embedding-001",
+        contents: [{ parts: [{ text }] }],
+      });
+      return response.embeddings[0].values;
+    } catch (err: any) {
+      const isUnavailable = err.message?.includes("503") || err.message?.includes("UNAVAILABLE") || err.status === 503;
+      if (isUnavailable && retryCount < maxRetries - 1) {
+        retryCount++;
+        const delay = Math.pow(2, retryCount) * 1000;
+        console.warn(`Embedding API unavailable (503). Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      console.error("Embedding failed:", err);
+      return [];
+    }
   }
+  return [];
 };

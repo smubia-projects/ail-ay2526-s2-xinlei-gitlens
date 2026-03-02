@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import { RepoModel } from "./models/Repo.js";
+import { SnippetModel } from "./models/Snippet.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -301,6 +302,76 @@ async function startServer() {
       }
       console.error("Search error:", err);
       return res.status(500).json({ error: "Search failed", message: err.message });
+    }
+  });
+
+  // Vector Search for code snippets
+  app.post("/api/search/snippets", async (req, res) => {
+    const { vector, owner, name, limit = 10 } = req.body;
+    if (!vector || !Array.isArray(vector)) {
+      return res.status(400).json({ error: "Vector array is required" });
+    }
+
+    try {
+      const results = await SnippetModel.aggregate([
+        {
+          $vectorSearch: {
+            index: "snippet_vector_index",
+            path: "embedding",
+            queryVector: vector,
+            numCandidates: 100,
+            limit: limit,
+            filter: {
+              owner: owner,
+              name: name
+            }
+          }
+        },
+        {
+          $project: {
+            path: 1,
+            content: 1,
+            startLine: 1,
+            endLine: 1,
+            score: { $meta: "vectorSearchScore" }
+          }
+        }
+      ]);
+      return res.json(results);
+    } catch (err: any) {
+      console.error("Snippet vector search error:", err);
+      return res.status(500).json({ error: "Snippet search failed", message: err.message });
+    }
+  });
+
+  // Index snippets for a repository
+  app.post("/api/repo/index-snippets", async (req, res) => {
+    const { owner, name, repoId, snippets } = req.body;
+    
+    if (!owner || !name || !repoId || !snippets || !Array.isArray(snippets)) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    try {
+      // Clear existing snippets for this repo
+      await SnippetModel.deleteMany({ repoId });
+
+      // Insert new snippets in batches
+      const batchSize = 50;
+      for (let i = 0; i < snippets.length; i += batchSize) {
+        const batch = snippets.slice(i, i + batchSize).map((s: any) => ({
+          ...s,
+          repoId,
+          owner,
+          name
+        }));
+        await SnippetModel.insertMany(batch);
+      }
+
+      return res.json({ message: `Successfully indexed ${snippets.length} snippets` });
+    } catch (err: any) {
+      console.error("Snippet indexing error:", err);
+      return res.status(500).json({ error: "Snippet indexing failed", message: err.message });
     }
   });
 

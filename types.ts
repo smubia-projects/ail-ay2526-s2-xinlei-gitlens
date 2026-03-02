@@ -79,6 +79,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   analysis?: AnalysisResult;
+  sources?: { path: string; startLine: number; endLine: number }[];
 }
 
 export interface Repository {

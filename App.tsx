@@ -72,6 +72,7 @@ export default function App() {
   const [isScanningFile, setIsScanningFile] = useState(false);
   const [useFlash, setUseFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentSources, setCurrentSources] = useState<{ path: string; startLine: number; endLine: number }[]>([]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'code' | 'map' | 'dashboard' | 'logic'>('code');
@@ -118,6 +119,7 @@ export default function App() {
       setUrl(targetUrl);
 
       // 1. Check Cache first (if not force refresh)
+      let repoId: string | null = null;
       if (!forceRefresh) {
         try {
           console.time("fetchCache");
@@ -127,6 +129,7 @@ export default function App() {
           if (cacheRes.ok && contentType && contentType.includes("application/json")) {
             const cachedData = await cacheRes.json();
             console.timeEnd("fetchCache");
+            repoId = cachedData._id;
             setFiles(cachedData.files);
             setOverview(cachedData.overview);
             setStats(cachedData.stats);
@@ -215,9 +218,9 @@ export default function App() {
       };
       setStats(newStats);
 
-      // 4. Save to Cache
+      // 5. Save to Cache and get repoId
       try {
-        await fetch('/api/repo', {
+        const saveRes = await fetch('/api/repo', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -231,8 +234,68 @@ export default function App() {
             embedding: vector
           })
         });
+        if (saveRes.ok) {
+          const savedRepo = await saveRes.json();
+          repoId = savedRepo._id;
+        }
       } catch (saveErr) {
         console.error("Failed to save to cache", saveErr);
+      }
+
+      // 6. Deep Indexing: Chunk and Embed files for RAG
+      if (repoId) {
+        console.log("Starting deep indexing for snippets...");
+        const codeFiles = tree.filter(f => 
+          f.type === 'blob' && 
+          /\.(ts|tsx|js|jsx|py|go|java|cpp|c|h|cs|rb|php|rs|swift|kt)$/i.test(f.path) &&
+          !f.path.includes('node_modules') &&
+          !f.path.includes('dist')
+        ).slice(0, 50); // Limit to 50 files for now to avoid rate limits
+
+        const allSnippets: any[] = [];
+        for (const file of codeFiles) {
+          try {
+            const content = await fetchFileContent(parsed, file.path);
+            const lines = content.split('\n');
+            const chunkSize = 50;
+            const overlap = 10;
+            
+            for (let i = 0; i < lines.length; i += (chunkSize - overlap)) {
+              const chunkLines = lines.slice(i, i + chunkSize);
+              const chunkContent = chunkLines.join('\n');
+              if (chunkContent.trim().length < 50) continue;
+
+              const chunkEmbedding = await embedText(chunkContent);
+              if (chunkEmbedding.length > 0) {
+                allSnippets.push({
+                  path: file.path,
+                  content: chunkContent,
+                  startLine: i + 1,
+                  endLine: i + chunkLines.length,
+                  embedding: chunkEmbedding
+                });
+              }
+              
+              // Small delay to avoid rate limits
+              if (allSnippets.length % 5 === 0) await new Promise(r => setTimeout(r, 100));
+            }
+          } catch (e) {
+            console.warn(`Failed to index ${file.path}`, e);
+          }
+        }
+
+        if (allSnippets.length > 0) {
+          await fetch('/api/repo/index-snippets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              owner: parsed.owner,
+              name: parsed.name,
+              repoId,
+              snippets: allSnippets
+            })
+          });
+        }
       }
 
       setActiveTab('dashboard');
@@ -305,8 +368,43 @@ export default function App() {
     console.time("runAnalysis");
     setIsLoading(true);
     setError(null);
+    setCurrentSources([]);
     try {
-      const rawAnalysis = await analyzeCode(userQuery, selectedFile, files.map(f => f.path), overview, useFlash);
+      // 1. Semantic Search for relevant snippets
+      let snippets: any[] = [];
+      if (repo) {
+        try {
+          const queryVector = await embedText(userQuery);
+          if (queryVector.length > 0) {
+            const searchRes = await fetch('/api/search/snippets', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                vector: queryVector,
+                owner: repo.owner,
+                name: repo.name,
+                limit: 5
+              })
+            });
+            if (searchRes.ok) {
+              snippets = await searchRes.json();
+              setCurrentSources(snippets.map((s: any) => ({ path: s.path, startLine: s.startLine, endLine: s.endLine })));
+            }
+          }
+        } catch (e) {
+          console.warn("Semantic search failed", e);
+        }
+      }
+
+      // 2. Call Gemini with context
+      const rawAnalysis = await analyzeCode(
+        userQuery, 
+        selectedFile, 
+        files.map(f => f.path), 
+        overview, 
+        useFlash,
+        snippets // Pass snippets as context
+      );
       const analysis = { ...rawAnalysis };
       
       // Refine highlights if they point to line 1 but have a name
@@ -314,7 +412,12 @@ export default function App() {
         analysis.highlights = refineHighlights(analysis.highlights, selectedFile.content);
       }
 
-      setMessages(prev => [...prev, { role: 'assistant', content: analysis.answer_markdown, analysis }]);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: analysis.answer_markdown, 
+        analysis,
+        sources: currentSources.length > 0 ? currentSources : undefined
+      }]);
       if (analysis.highlights.length > 0) {
         setActiveHighlights(analysis.highlights);
         const firstFile = analysis.highlights[0].file;
@@ -857,6 +960,12 @@ export default function App() {
 
             {sidebarTab === 'chat' && (
               <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+                {isLoading && currentSources.length > 0 && (
+                  <div className="flex items-center gap-2 text-[10px] text-emerald-500 font-bold uppercase tracking-widest animate-pulse px-2">
+                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
+                    Retrieved {currentSources.length} relevant snippets
+                  </div>
+                )}
                 {messages.length === 0 ? (
                   <div className="h-64 flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50">
                     <Activity size={48} />
@@ -870,6 +979,24 @@ export default function App() {
                     <div key={i} className={`flex flex-col gap-3 ${m.role === 'user' ? 'items-end' : 'items-start animate-in fade-in slide-in-from-left-4'} shrink-0`}>
                       <div className={`max-w-[95%] p-4 rounded-2xl shadow-xl transition-all ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none border border-blue-500 shadow-blue-500/20' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'}`}>
                          {m.role === 'assistant' ? <FormattedText text={m.content} onFileClick={handleSelectFile} /> : <div className="text-[13px] font-medium opacity-90">{m.content}</div>}
+                         {m.sources && m.sources.length > 0 && (
+                           <div className="mt-4 pt-3 border-t border-slate-800 flex flex-col gap-2">
+                             <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                               <Map size={10} className="text-emerald-500" /> Retrieved Context
+                             </div>
+                             <div className="flex flex-wrap gap-1.5">
+                               {m.sources.map((s, idx) => (
+                                 <button 
+                                   key={idx}
+                                   onClick={() => handleNavigate(s.path, s.startLine)}
+                                   className="text-[9px] px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded border border-slate-700 transition-colors truncate max-w-[150px]"
+                                 >
+                                   {s.path.split('/').pop()} (L{s.startLine})
+                                 </button>
+                               ))}
+                             </div>
+                           </div>
+                         )}
                       </div>
                       {m.analysis && (
                         <div className="w-full flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-500">
