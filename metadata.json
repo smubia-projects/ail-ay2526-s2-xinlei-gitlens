@@ -1,0 +1,5 @@
+{
+  "name": "GitLens Cursor",
+  "description": "AI-powered code visualizer and architecture explorer for GitHub repositories. Trace logic flows, analyze dependencies, and explore codebases with natural language.",
+  "requestFramePermissions": []
+}
