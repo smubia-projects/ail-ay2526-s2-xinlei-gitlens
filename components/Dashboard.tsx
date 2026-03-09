@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { RepoStats, RepoOverview } from '../types';
 import { FileText, Folder, Code, Hash, Activity, Zap, Shield, Globe } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -12,6 +12,14 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ stats, overview, repoName, onRefresh, isRefreshing }) => {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    // Small delay to ensure layout has settled
+    const timer = setTimeout(() => setIsMounted(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div className="h-full overflow-auto bg-slate-950 custom-scrollbar p-8">
       <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -62,26 +70,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, overview, repoName,
           {/* Language Distribution */}
           <div className="lg:col-span-1 bg-slate-900/50 border border-slate-800 p-8 rounded-[2rem] flex flex-col items-center">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] mb-8 self-start">Language Mix</h3>
-            <div className="w-full h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={stats.languages}
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="count"
-                  >
-                    {stats.languages.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
-                    itemStyle={{ color: '#fff', fontSize: '12px' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+            <div className="w-full h-[200px] flex items-center justify-center">
+              {isMounted && stats.languages.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={stats.languages}
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="count"
+                    >
+                      {stats.languages.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
+                      itemStyle={{ color: '#fff', fontSize: '12px' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-slate-500 text-xs italic">
+                  {!isMounted ? 'Loading Chart...' : 'No language data available'}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4 w-full mt-4">
               {stats.languages.map((lang, i) => (

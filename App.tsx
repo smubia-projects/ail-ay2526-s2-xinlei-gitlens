@@ -61,12 +61,13 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [indexingProgress, setIndexingProgress] = useState<{ current: number; total: number; stage: string } | null>(null);
   const [overview, setOverview] = useState<RepoOverview | null>(null);
   const [activeHighlights, setActiveHighlights] = useState<Highlight[]>([]);
   const [scrollTrigger, setScrollTrigger] = useState<number>(0);
+  const [targetLine, setTargetLine] = useState<number | undefined>(undefined);
   const [focusedFunction, setFocusedFunction] = useState<Highlight | null>(null);
   const [showHighlights, setShowHighlights] = useState(true);
-  const [isGeneratingFlow, setIsGeneratingFlow] = useState(false);
   const [dependencyData, setDependencyData] = useState<DependencyGraphData | null>(null);
   const [isGeneratingGraph, setIsGeneratingGraph] = useState(false);
   const [isScanningFile, setIsScanningFile] = useState(false);
@@ -252,8 +253,11 @@ export default function App() {
           !f.path.includes('dist')
         ).slice(0, 50); // Limit to 50 files for now to avoid rate limits
 
+        setIndexingProgress({ current: 0, total: codeFiles.length, stage: 'Deep Indexing' });
+
         const allSnippets: any[] = [];
-        for (const file of codeFiles) {
+        for (let idx = 0; idx < codeFiles.length; idx++) {
+          const file = codeFiles[idx];
           try {
             const content = await fetchFileContent(parsed, file.path);
             const lines = content.split('\n');
@@ -275,16 +279,18 @@ export default function App() {
                   embedding: chunkEmbedding
                 });
               }
-              
-              // Small delay to avoid rate limits
-              if (allSnippets.length % 5 === 0) await new Promise(r => setTimeout(r, 100));
             }
+            setIndexingProgress(prev => prev ? { ...prev, current: idx + 1 } : null);
+            
+            // Small delay to avoid rate limits
+            if (idx % 2 === 0) await new Promise(r => setTimeout(r, 100));
           } catch (e) {
             console.warn(`Failed to index ${file.path}`, e);
           }
         }
 
         if (allSnippets.length > 0) {
+          setIndexingProgress(prev => prev ? { ...prev, stage: 'Saving Index' } : null);
           await fetch('/api/repo/index-snippets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -298,6 +304,7 @@ export default function App() {
         }
       }
 
+      setIndexingProgress(null);
       setActiveTab('dashboard');
 
       const readme = tree.find(f => f.path.toLowerCase().includes('readme.md'));
@@ -419,7 +426,13 @@ export default function App() {
         sources: currentSources.length > 0 ? currentSources : undefined
       }]);
       if (analysis.highlights.length > 0) {
-        setActiveHighlights(analysis.highlights);
+        // Merge with existing highlights instead of overwriting
+        setActiveHighlights(prev => {
+          const newOnes = analysis.highlights.filter(nh => 
+            !prev.some(ph => ph.file === nh.file && (ph.function_name === nh.function_name || ph.label === nh.label))
+          );
+          return [...prev, ...newOnes];
+        });
         const firstFile = analysis.highlights[0].file;
         const fileExists = files.find(f => f.path.endsWith(firstFile) || firstFile.endsWith(f.path));
         if (fileExists && selectedFile?.path !== fileExists.path) {
@@ -465,12 +478,18 @@ export default function App() {
     if (fileExists) {
        handleSelectFile(fileExists.path);
        setScrollTrigger(prev => prev + 1);
+       setTargetLine(line);
        if (highlight) {
-         setActiveHighlights([highlight]);
+         // Add to highlights if not already there, don't overwrite
+         setActiveHighlights(prev => {
+           const exists = prev.some(h => h.file === highlight.file && (h.function_name === highlight.function_name || h.label === highlight.label));
+           return exists ? prev : [...prev, highlight];
+         });
          setFocusedFunction(highlight);
          setSidebarTab('focus');
        } else if (line) {
-         setActiveHighlights([{ file: path, start: line, end: line, label: 'Jumped here', description: '', logic_source: '' }]);
+         const jumpHighlight = { file: path, start: line, end: line, label: 'Jumped here', description: '', logic_source: '' };
+         setActiveHighlights(prev => [...prev, jumpHighlight]);
        }
     }
   };
@@ -487,44 +506,43 @@ export default function App() {
     runAnalysis(moduleQuery);
   };
 
-  const traceCallFlow = async () => {
-    if (!focusedFunction || !selectedFile) return;
-    setIsGeneratingFlow(true);
-    try {
-      const flow = await getFunctionFlow(focusedFunction.function_name || focusedFunction.label, selectedFile.content);
-      setFocusedFunction(prev => prev ? ({ ...prev, call_flow_markdown: flow }) : null);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsGeneratingFlow(false);
-    }
-  };
-
   const handleVisualizeDependencies = async (h: Highlight) => {
     setIsGeneratingGraph(true);
     const symbolName = h.function_name || h.label;
     try {
       // 1. Get structural dependencies from Gemini
-      const data = await getSymbolDependencies(
+      const dataPromise = getSymbolDependencies(
         symbolName,
         h.file,
         files.map(f => f.path),
         overview
       );
 
-      // 2. Find actual usages in the codebase using our new search API
-      const searchRes = await fetch(`/api/search/usages?symbol=${encodeURIComponent(symbolName)}`);
+      // 2. Get call flow markdown (the text trace)
+      const flowPromise = selectedFile ? getFunctionFlow(symbolName, selectedFile.content) : Promise.resolve("");
+
+      // 3. Find actual usages in the codebase
+      const searchResPromise = repo ? fetch(`/api/search/usages?symbol=${encodeURIComponent(symbolName)}&owner=${repo.owner}&name=${repo.name}`) : Promise.resolve(new Response(JSON.stringify([])));
+
+      const [data, flow, searchRes] = await Promise.all([dataPromise, flowPromise, searchResPromise]);
+      data.call_flow_markdown = flow;
+
       if (searchRes.ok) {
         const usages = await searchRes.json();
-        // Filter out the definition itself if possible
         const externalUsages = usages.filter((u: any) => u.file !== h.file);
         
         if (externalUsages.length > 0) {
-          // 3. Get usage examples (parameters/context) from Gemini
           const examples = await getUsageExamples(symbolName, externalUsages);
           data.usage_examples = examples;
 
-          // 4. Add external callers to the nodes/links if they aren't already there
+          // Update focusedFunction if it's the one we're analyzing
+          setFocusedFunction(prev => {
+            if (prev && (prev.function_name === symbolName || prev.label === symbolName)) {
+              return { ...prev, usage_examples: examples };
+            }
+            return prev;
+          });
+
           examples.forEach((ex: any) => {
             const nodeId = `${ex.file}:${ex.line}`;
             if (!data.nodes.find((n: any) => n.id === nodeId)) {
@@ -537,7 +555,7 @@ export default function App() {
               });
               data.links.push({
                 source: nodeId,
-                target: data.nodes[0]?.id || symbolName, // Link to the target function
+                target: data.nodes[0]?.id || symbolName,
                 label: 'calls'
               });
             }
@@ -549,7 +567,7 @@ export default function App() {
       setActiveTab('logic');
     } catch (err) {
       console.error(err);
-      setError("Failed to generate dependency graph.");
+      setError("Failed to generate logic flow.");
     } finally {
       setIsGeneratingGraph(false);
     }
@@ -635,6 +653,25 @@ export default function App() {
           <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border border-slate-700 text-blue-400 shadow-inner">GC</div>
         </div>
       </header>
+
+      {isIndexing && (
+        <div className="bg-blue-600/10 border-b border-blue-500/20 p-2 flex items-center justify-center gap-3 text-blue-400 text-[10px] font-bold uppercase tracking-widest animate-in slide-in-from-top duration-300 relative z-40">
+          <Loader2 size={14} className="animate-spin" />
+          <span>
+            {indexingProgress 
+              ? `${indexingProgress.stage}: ${indexingProgress.current}/${indexingProgress.total} Files`
+              : 'Mapping Repository Architecture...'}
+          </span>
+          {indexingProgress && (
+            <div className="w-32 h-1 bg-slate-800 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-blue-500 transition-all duration-300" 
+                style={{ width: `${(indexingProgress.current / indexingProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-500/10 border-b border-red-500/20 p-2 flex items-center justify-center gap-3 text-red-400 text-xs font-medium animate-in slide-in-from-top duration-300 relative z-40">
@@ -727,8 +764,9 @@ export default function App() {
                 <CodeViewer 
                   content={selectedFile.content} 
                   filename={selectedFile.path} 
-                  highlights={showHighlights ? activeHighlights : []} 
+                  highlights={showHighlights ? (focusedFunction ? [focusedFunction] : activeHighlights) : []} 
                   scrollTrigger={scrollTrigger}
+                  targetLine={targetLine}
                   onExplainSelection={handleExplainSelection}
                   onScanFile={handleScanFile}
                   isScanning={isScanningFile}
@@ -820,43 +858,69 @@ export default function App() {
                       <div className="space-y-5">
                         <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
                           <div className="text-[10px] text-slate-600 uppercase font-black mb-2 flex items-center gap-2 tracking-widest"><Info size={14} className="text-blue-500" /> Responsibility</div>
-                          <p className="text-[13px] text-slate-300 leading-relaxed">{focusedFunction.description}</p>
+                          <p className="text-[13px] text-slate-300 leading-relaxed">{focusedFunction.description || focusedFunction.explanation}</p>
                         </div>
 
                         <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
                           <div className="text-[10px] text-slate-600 uppercase font-black mb-2 flex items-center gap-2 tracking-widest"><ArrowRightCircle size={14} className="text-blue-500" /> Data Flow</div>
-                          <p className="text-[13px] text-slate-300 leading-relaxed italic opacity-80">{focusedFunction.logic_source}</p>
-                          {focusedFunction.params && (
-                            <div className="mt-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
-                              <div className="text-[9px] uppercase font-bold text-blue-400/70 mb-1">Arguments</div>
-                              <div className="text-[11px] mono text-blue-300 break-all">{focusedFunction.params}</div>
+                          <p className="text-[13px] text-slate-300 leading-relaxed italic opacity-80">{focusedFunction.logic_source || "Input/Output Signature"}</p>
+                          {(focusedFunction.params || focusedFunction.returns) && (
+                            <div className="mt-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10 space-y-2">
+                              {focusedFunction.params && (
+                                <div>
+                                  <div className="text-[9px] uppercase font-bold text-blue-400/70 mb-1">Arguments</div>
+                                  <div className="text-[11px] mono text-blue-300 break-all">{focusedFunction.params}</div>
+                                </div>
+                              )}
+                              {focusedFunction.returns && (
+                                <div>
+                                  <div className="text-[9px] uppercase font-bold text-emerald-400/70 mb-1">Returns</div>
+                                  <div className="text-[11px] mono text-emerald-300 break-all">{focusedFunction.returns}</div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
 
-                        <div className="pt-2">
-                          {!focusedFunction.call_flow_markdown ? (
-                            <button 
-                              onClick={traceCallFlow}
-                              disabled={isGeneratingFlow}
-                              className="w-full flex items-center justify-center gap-3 py-3 rounded-2xl border border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-blue-500/50 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-400 transition-all disabled:opacity-50"
-                            >
-                              {isGeneratingFlow ? <Loader2 size={16} className="animate-spin" /> : <GitPullRequest size={16} />}
-                              {isGeneratingFlow ? 'Tracing Map...' : 'Generate Trace Map'}
-                            </button>
-                          ) : (
-                            <div className="bg-slate-950 p-4 rounded-xl border border-blue-500/20 animate-in fade-in slide-in-from-top-4 shadow-inner overflow-hidden">
-                               <div className="text-[10px] text-blue-400 uppercase font-black mb-3 flex items-center gap-2 tracking-widest"><Network size={14} /> Trace Map</div>
-                               <div 
-                                 className="markdown-body prose prose-invert prose-slate max-w-none text-[12px] leading-relaxed pl-3 border-l border-blue-500/30 max-h-[450px] overflow-y-auto custom-scrollbar"
-                                 onWheel={(e) => e.stopPropagation()}
-                               >
-                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                   {focusedFunction.call_flow_markdown}
-                                 </ReactMarkdown>
-                               </div>
+                        {focusedFunction.usage_examples && focusedFunction.usage_examples.length > 0 && (
+                          <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+                            <div className="text-[10px] text-emerald-500 uppercase font-black mb-3 flex items-center gap-2 tracking-widest"><Activity size={14} /> Contextual Examples</div>
+                            <div className="space-y-3">
+                              {focusedFunction.usage_examples.slice(0, 3).map((ex, i) => (
+                                <div key={i} className="p-3 rounded-xl bg-slate-900/50 border border-slate-800/50 hover:border-blue-500/30 transition-all group cursor-pointer"
+                                  onClick={() => handleNavigate(ex.file, ex.line)}
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="text-[9px] font-bold text-slate-500 mono truncate max-w-[150px]">{ex.file.split('/').pop()}</div>
+                                    <div className="text-[9px] text-blue-400/50 group-hover:text-blue-400 transition-colors">L{ex.line}</div>
+                                  </div>
+                                  <div className="text-[10px] mono text-blue-300/80 bg-slate-950 p-2 rounded-lg border border-slate-800/50 mb-2 break-all">
+                                    {ex.arguments}
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 leading-relaxed italic">{ex.context_explanation}</p>
+                                </div>
+                              ))}
+                              {focusedFunction.usage_examples.length > 3 && (
+                                <button 
+                                  onClick={() => setActiveTab('logic')}
+                                  className="w-full py-2 text-[9px] font-bold text-slate-600 hover:text-blue-400 uppercase tracking-widest transition-colors"
+                                >
+                                  + {focusedFunction.usage_examples.length - 3} more in Logic Flow
+                                </button>
+                              )}
                             </div>
-                          )}
+                          </div>
+                        )}
+
+                        <div className="pt-2">
+                          <button 
+                            onClick={() => handleVisualizeDependencies(focusedFunction)}
+                            disabled={isGeneratingGraph}
+                            className="w-full flex items-center justify-center gap-3 py-3 rounded-2xl border border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-blue-500/50 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-400 transition-all disabled:opacity-50 shadow-lg shadow-blue-500/5"
+                          >
+                            {isGeneratingGraph ? <Loader2 size={16} className="animate-spin" /> : <Network size={16} />}
+                            {isGeneratingGraph ? 'Tracing Logic...' : 'Generate Logic Flow'}
+                          </button>
                         </div>
                       </div>
                     </div>

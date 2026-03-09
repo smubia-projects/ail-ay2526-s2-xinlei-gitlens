@@ -16,15 +16,87 @@ interface CodeViewerProps {
   filename: string;
   highlights: Highlight[];
   scrollTrigger?: number;
+  targetLine?: number;
   onExplainSelection?: (selection: string) => void;
   onScanFile?: () => void;
   isScanning?: boolean;
 }
 
-export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highlights, scrollTrigger, onExplainSelection, onScanFile, isScanning }) => {
+interface CodeLineProps {
+  line: string;
+  lineNum: number;
+  language: string;
+  matchingHighlight?: Highlight;
+  isHovered: boolean;
+  onMouseEnter: (lineNum: number) => void;
+  onMouseLeave: () => void;
+}
+
+const CodeLine = React.memo<CodeLineProps>(({ line, lineNum, language, matchingHighlight, isHovered, onMouseEnter, onMouseLeave }) => {
+  const isStartOfHighlight = matchingHighlight && lineNum === matchingHighlight.start;
+  const codeRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (codeRef.current) {
+      Prism.highlightElement(codeRef.current);
+    }
+  }, [line, language]);
+
+  return (
+    <tr 
+      id={`line-${lineNum}`}
+      onMouseEnter={() => onMouseEnter(lineNum)}
+      onMouseLeave={onMouseLeave}
+      className={`transition-all duration-300 group ${matchingHighlight ? 'bg-blue-600/10' : 'hover:bg-white/[0.02]'}`}
+    >
+      <td className={`w-14 text-right pr-4 text-slate-700 select-none whitespace-nowrap align-top py-0.5 border-l-4 transition-all duration-500 ${matchingHighlight ? 'border-blue-500 text-blue-400/60 font-bold' : 'border-transparent'}`}>
+        {lineNum}
+      </td>
+      <td className="relative align-top py-0.5 px-4 min-w-[400px]">
+        {isStartOfHighlight && (
+          <div className="absolute -top-6 left-4 flex items-center gap-2 z-10 pointer-events-none animate-in fade-in slide-in-from-left-4 duration-700">
+            <div className="text-[10px] bg-blue-600 text-white px-2.5 py-1 rounded-md shadow-[0_0_20px_rgba(37,99,235,0.4)] font-sans font-black flex items-center gap-2 uppercase tracking-tighter border border-blue-400">
+              <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              {matchingHighlight.function_name || matchingHighlight.label}
+            </div>
+            {(matchingHighlight.params || matchingHighlight.returns) && (
+                <div className="text-[9px] bg-slate-950 border border-slate-800 text-slate-400 px-2 py-1 rounded-md shadow-2xl mono whitespace-nowrap backdrop-blur-sm">
+                  {matchingHighlight.params && <span className="text-blue-400/80">({matchingHighlight.params})</span>}
+                  {matchingHighlight.returns && <span className="text-emerald-400/80 ml-1">→ {matchingHighlight.returns}</span>}
+                </div>
+            )}
+          </div>
+        )}
+
+        {isHovered && matchingHighlight?.explanation && (
+          <div className="absolute left-4 bottom-full mb-2 z-50 w-[300px] animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl backdrop-blur-md">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles size={12} className="text-blue-400" />
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AI Insight</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed font-sans italic">
+                {matchingHighlight.explanation}
+              </p>
+            </div>
+            <div className="w-3 h-3 bg-slate-900 border-r border-b border-slate-700 rotate-45 absolute -bottom-1.5 left-6" />
+          </div>
+        )}
+
+        <pre className={`language-${language} whitespace-pre text-slate-300 m-0 leading-relaxed transition-all duration-300 pr-10 ${matchingHighlight ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'}`}>
+          <code ref={codeRef} className={`language-${language}`}>{line || ' '}</code>
+        </pre>
+      </td>
+    </tr>
+  );
+});
+
+export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highlights, scrollTrigger, targetLine, onExplainSelection, onScanFile, isScanning }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const observerTarget = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{ text: string; top: number; left: number } | null>(null);
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState(500);
 
   const lines = content.split('\n');
   const fileHighlights = React.useMemo(() => 
@@ -32,35 +104,63 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
     [highlights, filename]
   );
 
-  const lastScrolledRef = useRef<string | null>(null);
+  // Reset visible count when file changes
+  useEffect(() => {
+    setVisibleCount(500);
+  }, [filename]);
 
-  const getLanguage = (filename: string) => {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'ts': return 'typescript';
-      case 'tsx': return 'tsx';
-      case 'js': return 'javascript';
-      case 'jsx': return 'jsx';
-      case 'md': return 'markdown';
-      case 'json': return 'json';
-      case 'css': return 'css';
-      default: return 'javascript';
+  // Ensure visibleCount includes the target highlight or targetLine
+  useEffect(() => {
+    let maxLine = 0;
+    if (fileHighlights.length > 0) {
+      maxLine = Math.max(...fileHighlights.map(h => h.end));
     }
-  };
+    if (targetLine && targetLine > maxLine) {
+      maxLine = targetLine;
+    }
+    
+    if (maxLine > visibleCount) {
+      setVisibleCount(prev => Math.max(prev, maxLine + 100));
+    }
+  }, [fileHighlights, filename, scrollTrigger, targetLine]);
 
   useEffect(() => {
-    Prism.highlightAll();
-  }, [content, filename]);
+    if (containerRef.current) {
+      if (targetLine) {
+        const element = document.getElementById(`line-${targetLine}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+      }
 
-  useEffect(() => {
-    if (fileHighlights.length > 0 && containerRef.current) {
-      const firstHighlight = fileHighlights[0];
-      const element = document.getElementById(`line-${firstHighlight.start}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (fileHighlights.length > 0) {
+        const firstHighlight = fileHighlights[0];
+        const element = document.getElementById(`line-${firstHighlight.start}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       }
     }
-  }, [fileHighlights, filename, scrollTrigger]);
+  }, [fileHighlights, filename, scrollTrigger, targetLine]);
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && visibleCount < lines.length) {
+          setVisibleCount(prev => Math.min(prev + 500, lines.length));
+        }
+      },
+      { threshold: 0.1, root: containerRef.current, rootMargin: '200px' }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => observer.disconnect();
+  }, [visibleCount, lines.length]);
 
   const handleSelection = () => {
     const sel = window.getSelection();
@@ -78,7 +178,22 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
     }
   };
 
+  const getLanguage = (filename: string) => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'ts': return 'typescript';
+      case 'tsx': return 'tsx';
+      case 'js': return 'javascript';
+      case 'jsx': return 'jsx';
+      case 'md': return 'markdown';
+      case 'json': return 'json';
+      case 'css': return 'css';
+      default: return 'javascript';
+    }
+  };
+
   const language = getLanguage(filename);
+  const visibleLines = lines.slice(0, visibleCount);
 
   return (
     <div className="flex flex-col h-full bg-slate-950 mono text-[13px] relative overflow-hidden" onMouseUp={handleSelection}>
@@ -97,7 +212,9 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
             {isScanning ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
             {isScanning ? 'Scanning...' : 'Scan Symbols'}
           </button>
-          <span className="opacity-40 font-mono text-[10px] uppercase tracking-widest">{lines.length} Lines</span>
+          <span className="opacity-40 font-mono text-[10px] uppercase tracking-widest">
+            {visibleCount < lines.length ? `${visibleCount} / ${lines.length}` : lines.length} Lines
+          </span>
         </div>
       </div>
 
@@ -123,63 +240,25 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
         <div className="min-w-fit w-full">
           <table className="w-full border-collapse">
             <tbody>
-              {lines.map((line, i) => {
-                const lineNum = i + 1;
-                const matchingHighlight = fileHighlights.find(h => lineNum >= h.start && lineNum <= h.end);
-                const isStartOfHighlight = matchingHighlight && lineNum === matchingHighlight.start;
-                const isHovered = hoveredLine === lineNum;
-
-                return (
-                  <tr 
-                    key={lineNum} 
-                    id={`line-${lineNum}`}
-                    onMouseEnter={() => setHoveredLine(lineNum)}
-                    onMouseLeave={() => setHoveredLine(null)}
-                    className={`transition-all duration-300 group ${matchingHighlight ? 'bg-blue-600/10' : 'hover:bg-white/[0.02]'}`}
-                  >
-                    <td className={`w-14 text-right pr-4 text-slate-700 select-none whitespace-nowrap align-top py-0.5 border-l-4 transition-all duration-500 ${matchingHighlight ? 'border-blue-500 text-blue-400/60 font-bold' : 'border-transparent'}`}>
-                      {lineNum}
-                    </td>
-                    <td className="relative align-top py-0.5 px-4 min-w-[400px]">
-                      {isStartOfHighlight && (
-                        <div className="absolute -top-6 left-4 flex items-center gap-2 z-10 pointer-events-none animate-in fade-in slide-in-from-left-4 duration-700">
-                          <div className="text-[10px] bg-blue-600 text-white px-2.5 py-1 rounded-md shadow-[0_0_20px_rgba(37,99,235,0.4)] font-sans font-black flex items-center gap-2 uppercase tracking-tighter border border-blue-400">
-                            <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                            {matchingHighlight.function_name || matchingHighlight.label}
-                          </div>
-                          {(matchingHighlight.params || matchingHighlight.returns) && (
-                              <div className="text-[9px] bg-slate-950 border border-slate-800 text-slate-400 px-2 py-1 rounded-md shadow-2xl mono whitespace-nowrap backdrop-blur-sm">
-                                {matchingHighlight.params && <span className="text-blue-400/80">({matchingHighlight.params})</span>}
-                                {matchingHighlight.returns && <span className="text-emerald-400/80 ml-1">→ {matchingHighlight.returns}</span>}
-                              </div>
-                          )}
-                        </div>
-                      )}
-
-                      {isHovered && matchingHighlight?.explanation && (
-                        <div className="absolute left-4 bottom-full mb-2 z-50 w-[300px] animate-in fade-in zoom-in-95 duration-200">
-                          <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl backdrop-blur-md">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Sparkles size={12} className="text-blue-400" />
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AI Insight</span>
-                            </div>
-                            <p className="text-[11px] text-slate-300 leading-relaxed font-sans italic">
-                              {matchingHighlight.explanation}
-                            </p>
-                          </div>
-                          <div className="w-3 h-3 bg-slate-900 border-r border-b border-slate-700 rotate-45 absolute -bottom-1.5 left-6" />
-                        </div>
-                      )}
-
-                      <pre className={`language-${language} whitespace-pre text-slate-300 m-0 leading-relaxed transition-all duration-300 pr-10 ${matchingHighlight ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'}`}>
-                        <code className={`language-${language}`}>{line || ' '}</code>
-                      </pre>
-                    </td>
-                  </tr>
-                );
-              })}
+              {visibleLines.map((line, i) => (
+                <CodeLine 
+                  key={i + 1}
+                  line={line}
+                  lineNum={i + 1}
+                  language={language}
+                  matchingHighlight={fileHighlights.find(h => (i + 1) >= h.start && (i + 1) <= h.end)}
+                  isHovered={hoveredLine === (i + 1)}
+                  onMouseEnter={setHoveredLine}
+                  onMouseLeave={() => setHoveredLine(null)}
+                />
+              ))}
             </tbody>
           </table>
+          {visibleCount < lines.length && (
+            <div ref={observerTarget} className="h-20 flex items-center justify-center text-slate-500 text-xs font-bold uppercase tracking-widest">
+              <Loader2 size={16} className="animate-spin mr-2" /> Loading more lines...
+            </div>
+          )}
         </div>
       </div>
     </div>

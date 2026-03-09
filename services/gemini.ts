@@ -292,16 +292,18 @@ export const analyzeFileSymbols = async (
 ): Promise<any[]> => {
   const response = await callGemini({
     model: "gemini-3-flash-preview",
-    contents: `Analyze this file and identify all major functions, classes, or exported variables. 
-    For each, provide:
-    1. The name
-    2. Start and end line numbers
-    3. A concise one-sentence explanation of what it does.
+    contents: `Analyze this file and identify all major functions, classes, or exported variables that contain business logic. 
+    
+    CRITICAL RULES:
+    1. IGNORE framework configuration constants (e.g., in Next.js: 'dynamic', 'revalidate', 'fetchCache', 'runtime', 'preferredRegion').
+    2. IGNORE simple type definitions or interfaces unless they are exceptionally complex.
+    3. FOCUS on functions that perform actions, API handlers (GET, POST, etc.), and core logic blocks.
+    4. For each symbol, provide the name, line range, and a technical explanation.
     
     FILE (${filename}):
     \n\n${content}`,
     config: {
-      systemInstruction: "Return a JSON array of highlights.",
+      systemInstruction: "You are a code symbol extractor. Your goal is to identify the 'meat' of the file while skipping boilerplate and configuration.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.ARRAY,

@@ -24,6 +24,9 @@ export const fetchRepoTree = async (repo: Repository): Promise<RepoFile[]> => {
   }
   
   if (!repoRes.ok) {
+    if (repoRes.status === 404) {
+      throw new Error(`Repository not found. If this is a private repository, please ensure it is public as unauthenticated requests are limited to public repositories.`);
+    }
     throw new Error(`Failed to fetch repository info: ${repoRes.statusText}`);
   }
 

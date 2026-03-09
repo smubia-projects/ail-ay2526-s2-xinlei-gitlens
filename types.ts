@@ -18,6 +18,7 @@ export interface Highlight {
   description?: string;
   logic_source?: string;
   call_flow_markdown?: string;
+  usage_examples?: UsageExample[];
 }
 
 export interface RelatedSymbol {
@@ -59,6 +60,7 @@ export interface DependencyGraphData {
   nodes: DependencyNode[];
   links: DependencyLink[];
   usage_examples?: UsageExample[];
+  call_flow_markdown?: string;
 }
 
 export interface RepoStats {

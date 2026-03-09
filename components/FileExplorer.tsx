@@ -1,7 +1,24 @@
 
 import React, { useMemo } from 'react';
 import { RepoFile } from '../types';
-import { Folder, FileCode, ChevronRight, ChevronDown } from 'lucide-react';
+import { 
+  Folder, 
+  FileCode, 
+  FileJson, 
+  FileText, 
+  FileImage, 
+  FileArchive, 
+  FileSearch, 
+  FileTerminal, 
+  ChevronRight, 
+  ChevronDown,
+  Settings,
+  Lock,
+  FileSpreadsheet,
+  FileAudio,
+  FileVideo,
+  Database
+} from 'lucide-react';
 
 interface FileExplorerProps {
   files: RepoFile[];
@@ -15,6 +32,52 @@ interface TreeNode {
   type: 'blob' | 'tree';
   children: Map<string, TreeNode>;
 }
+
+const getFileIcon = (filename: string) => {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  
+  if (['ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rb', 'java', 'c', 'cpp', 'cs', 'php', 'rs', 'swift', 'kt', 'dart'].includes(ext || '')) {
+    return <FileCode size={14} className="text-blue-400" />;
+  }
+  if (['json', 'yaml', 'yml', 'toml', 'xml'].includes(ext || '')) {
+    return <FileJson size={14} className="text-amber-400" />;
+  }
+  if (['md', 'txt', 'rtf', 'pdf', 'doc', 'docx'].includes(ext || '')) {
+    return <FileText size={14} className="text-slate-400" />;
+  }
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext || '')) {
+    return <FileImage size={14} className="text-emerald-400" />;
+  }
+  if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext || '')) {
+    return <FileArchive size={14} className="text-rose-400" />;
+  }
+  if (['sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1'].includes(ext || '')) {
+    return <FileTerminal size={14} className="text-emerald-500" />;
+  }
+  if (['sql', 'db', 'sqlite', 'mongodb', 'prisma'].includes(ext || '')) {
+    return <Database size={14} className="text-indigo-400" />;
+  }
+  if (['csv', 'xlsx', 'xls'].includes(ext || '')) {
+    return <FileSpreadsheet size={14} className="text-emerald-600" />;
+  }
+  if (['mp3', 'wav', 'ogg', 'flac'].includes(ext || '')) {
+    return <FileAudio size={14} className="text-violet-400" />;
+  }
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext || '')) {
+    return <FileVideo size={14} className="text-rose-500" />;
+  }
+  if (['lock', 'key', 'pem', 'crt'].includes(ext || '')) {
+    return <Lock size={14} className="text-amber-500" />;
+  }
+  if (filename.startsWith('.') || ['env', 'config', 'settings'].includes(ext || '')) {
+    return <Settings size={14} className="text-slate-500" />;
+  }
+  if (['test', 'spec'].some(s => filename.toLowerCase().includes(s))) {
+    return <FileSearch size={14} className="text-emerald-400" />;
+  }
+
+  return <FileCode size={14} className="text-slate-500" />;
+};
 
 export const FileExplorer: React.FC<FileExplorerProps> = ({ files, onSelectFile, selectedPath }) => {
   const tree = useMemo(() => {
@@ -70,7 +133,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ files, onSelectFile,
             ) : (
               <>
                 <div className="w-[14px]" />
-                <FileCode size={14} className="text-slate-500" />
+                {getFileIcon(node.name)}
               </>
             )}
             <span className="truncate">{node.name}</span>

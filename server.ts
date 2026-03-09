@@ -272,34 +272,48 @@ async function startServer() {
 
   // Search for symbol usages across the codebase
   app.get("/api/search/usages", async (req, res) => {
-    const { symbol } = req.query;
+    const { symbol, owner, name } = req.query;
     if (!symbol) return res.status(400).json({ error: "Symbol is required" });
 
     try {
-      // Use grep to find usages. -r (recursive), -n (line number), -I (ignore binary), -w (whole word)
-      // We exclude node_modules, .git, and other common build/dependency folders
-      // Also exclude .map files which can be massive
-      const command = `grep -rInw "${symbol}" . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=.next --exclude="*.map"`;
-      
-      // Increase maxBuffer to 10MB to handle large codebases
-      const { stdout } = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
-      
-      const lines = stdout.split('\n').filter(line => line.trim() !== '');
-      const usages = lines.map(line => {
-        const [file, lineNumber, ...contextParts] = line.split(':');
-        return {
-          file: file.replace(/^\.\//, ''),
-          line: parseInt(lineNumber),
-          context: contextParts.join(':').trim()
-        };
-      });
+      // If owner and name are provided, search in the SnippetModel
+      if (owner && name) {
+        console.log(`Searching for usages of "${symbol}" in ${owner}/${name}`);
+        
+        // Use a regex with word boundaries to find whole-word matches
+        const regex = new RegExp(`\\b${symbol}\\b`);
+        
+        const snippets = await SnippetModel.find({
+          owner,
+          name,
+          content: { $regex: regex }
+        }).limit(100);
 
-      return res.json(usages);
-    } catch (err: any) {
-      // grep returns exit code 1 if no matches found, which exec treats as an error
-      if (err.code === 1) {
-        return res.json([]);
+        const usages: any[] = [];
+        snippets.forEach(s => {
+          const lines = s.content.split('\n');
+          lines.forEach((line, index) => {
+            if (regex.test(line)) {
+              usages.push({
+                file: s.path,
+                line: s.startLine + index,
+                context: line.trim()
+              });
+            }
+          });
+        });
+
+        // De-duplicate usages (same file and line)
+        const uniqueUsages = usages.filter((v, i, a) => 
+          a.findIndex(t => t.file === v.file && t.line === v.line) === i
+        );
+
+        return res.json(uniqueUsages);
       }
+
+      // Fallback to empty results if no owner/name (prevents searching app's own disk)
+      return res.json([]);
+    } catch (err: any) {
       console.error("Search error:", err);
       return res.status(500).json({ error: "Search failed", message: err.message });
     }
