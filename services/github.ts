@@ -16,8 +16,13 @@ export const parseRepoUrl = (url: string): Repository | null => {
   }
 };
 
-export const fetchRepoTree = async (repo: Repository): Promise<RepoFile[]> => {
-  const repoRes = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}`);
+export const fetchRepoTree = async (repo: Repository, token?: string): Promise<RepoFile[]> => {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `token ${token}`;
+  }
+
+  const repoRes = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}`, { headers });
   
   if (repoRes.status === 403) {
     throw new Error('GitHub API rate limit exceeded. Please try again later.');
@@ -25,16 +30,16 @@ export const fetchRepoTree = async (repo: Repository): Promise<RepoFile[]> => {
   
   if (!repoRes.ok) {
     if (repoRes.status === 404) {
-      throw new Error(`Repository not found. If this is a private repository, please ensure it is public as unauthenticated requests are limited to public repositories.`);
+      throw new Error(`Repository not found. If this is a private repository, please ensure you are connected to GitHub.`);
     }
-    throw new Error(`Failed to fetch repository info: ${repoRes.statusText}`);
+    throw new Error(`Failed to fetch repository info: ${repoRes.status} ${repoRes.statusText || ''}`);
   }
 
   const repoInfo = await repoRes.json();
   const branch = repoInfo.default_branch || 'main';
   
   const treeUrl = `https://api.github.com/repos/${repo.owner}/${repo.name}/git/trees/${branch}?recursive=1`;
-  const response = await fetch(treeUrl);
+  const response = await fetch(treeUrl, { headers });
 
   if (response.status === 403) {
     throw new Error('GitHub API rate limit exceeded. Large repositories often hit this limit on unauthenticated requests.');
@@ -43,9 +48,9 @@ export const fetchRepoTree = async (repo: Repository): Promise<RepoFile[]> => {
   if (!response.ok) {
     // Large repos sometimes fail recursive fetch due to size limits. Try non-recursive as fallback.
     const fallbackUrl = `https://api.github.com/repos/${repo.owner}/${repo.name}/git/trees/${branch}`;
-    const fallbackResponse = await fetch(fallbackUrl);
+    const fallbackResponse = await fetch(fallbackUrl, { headers });
     if (!fallbackResponse.ok) {
-      throw new Error(`Failed to fetch repo tree: ${response.statusText}`);
+      throw new Error(`Failed to fetch repo tree: ${response.status} ${response.statusText || ''}`);
     }
     const fallbackData = await fallbackResponse.json();
     return fallbackData.tree as RepoFile[];
@@ -55,13 +60,19 @@ export const fetchRepoTree = async (repo: Repository): Promise<RepoFile[]> => {
   return data.tree as RepoFile[];
 };
 
-export const fetchFileContent = async (repo: Repository, path: string): Promise<string> => {
+export const fetchFileContent = async (repo: Repository, path: string, token?: string): Promise<string> => {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `token ${token}`;
+  }
+
   const response = await fetch(
-    `https://api.github.com/repos/${repo.owner}/${repo.name}/contents/${path}`
+    `https://api.github.com/repos/${repo.owner}/${repo.name}/contents/${path}`,
+    { headers }
   );
   if (!response.ok) {
     if (response.status === 403) throw new Error('API rate limit exceeded.');
-    throw new Error('Failed to fetch file content');
+    throw new Error(`Failed to fetch file content: ${response.status} ${response.statusText || ''}`);
   }
   const data = await response.json();
   

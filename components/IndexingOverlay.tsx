@@ -6,31 +6,49 @@ interface IndexingOverlayProps {
   isVisible: boolean;
   repoName?: string;
   loadingTime?: number;
+  progress?: { current: number; total: number; stage: string } | null;
 }
 
 const steps = [
-  { icon: <Globe size={18} />, text: "Connecting to GitHub API..." },
-  { icon: <GitBranch size={18} />, text: "Fetching repository tree structure..." },
-  { icon: <Search size={18} />, text: "Identifying core modules and entry points..." },
-  { icon: <Cpu size={18} />, text: "Analyzing project architecture with Gemini..." },
-  { icon: <Database size={18} />, text: "Indexing symbols and logic flows..." },
-  { icon: <Shield size={18} />, text: "Securing metadata in database cluster..." },
-  { icon: <Zap size={18} />, text: "Finalizing repository map..." },
+  { id: 'Initializing', icon: <Globe size={18} />, text: "Connecting to GitHub API..." },
+  { id: 'Fetching Repository Tree', icon: <GitBranch size={18} />, text: "Fetching repository tree structure..." },
+  { id: 'Analyzing Project Structure', icon: <Search size={18} />, text: "Identifying core modules and entry points..." },
+  { id: 'Generating Repository Overview', icon: <Cpu size={18} />, text: "Analyzing project architecture with Gemini..." },
+  { id: 'Deep Indexing', icon: <Database size={18} />, text: "Indexing symbols and logic flows..." },
+  { id: 'Saving Index', icon: <Shield size={18} />, text: "Securing metadata in database cluster..." },
+  { id: 'Finalizing', icon: <Zap size={18} />, text: "Finalizing repository map..." },
 ];
 
-export const IndexingOverlay: React.FC<IndexingOverlayProps> = ({ isVisible, repoName, loadingTime }) => {
-  const [currentStep, setCurrentStep] = useState(0);
+export const IndexingOverlay: React.FC<IndexingOverlayProps> = ({ isVisible, repoName, loadingTime, progress }) => {
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
   useEffect(() => {
-    if (isVisible) {
-      const interval = setInterval(() => {
-        setCurrentStep((prev) => (prev + 1) % steps.length);
-      }, 2500);
-      return () => clearInterval(interval);
-    } else {
-      setCurrentStep(0);
+    if (progress) {
+      const stage = progress.stage;
+      const index = steps.findIndex(s => stage.includes(s.id) || s.id.includes(stage));
+      if (index !== -1) {
+        setCurrentStepIndex(index);
+      } else if (stage === 'Scanning Entry Points' || stage === 'Generating Semantic Vector' || stage === 'Saving to Cache') {
+        setCurrentStepIndex(3); // Map these to "Analyzing project architecture"
+      }
     }
-  }, [isVisible]);
+  }, [progress]);
+
+  const calculateProgress = () => {
+    if (!progress) return 0;
+    if (progress.stage === 'Deep Indexing') {
+      // Deep indexing is the 5th step (index 4)
+      // We'll say it covers 60% to 90% of the total bar
+      const base = 60;
+      const range = 30;
+      const subProgress = (progress.current / progress.total) * range;
+      return base + subProgress;
+    }
+    if (progress.stage === 'Saving Index') return 95;
+    return progress.current;
+  };
+
+  const progressValue = calculateProgress();
 
   return (
     <AnimatePresence>
@@ -70,25 +88,32 @@ export const IndexingOverlay: React.FC<IndexingOverlayProps> = ({ isVisible, rep
                 <div 
                   key={index} 
                   className={`flex items-center gap-4 transition-all duration-500 ${
-                    index === currentStep 
+                    index === currentStepIndex 
                       ? "text-blue-400 translate-x-2" 
-                      : index < currentStep 
+                      : index < currentStepIndex 
                         ? "text-emerald-500 opacity-50" 
                         : "text-slate-600 opacity-30"
                   }`}
                 >
                   <div className={`p-1.5 rounded-lg border ${
-                    index === currentStep 
+                    index === currentStepIndex 
                       ? "bg-blue-500/10 border-blue-500/30" 
-                      : index < currentStep 
+                      : index < currentStepIndex 
                         ? "bg-emerald-500/10 border-emerald-500/30" 
                         : "bg-slate-800 border-slate-700"
                   }`}>
                     {step.icon}
                   </div>
-                  <span className="text-xs font-bold uppercase tracking-wider">
-                    {step.text}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold uppercase tracking-wider">
+                      {step.text}
+                    </span>
+                    {index === currentStepIndex && progress?.stage === 'Deep Indexing' && (
+                      <span className="text-[9px] text-blue-500/70 font-mono">
+                        Processing file {progress.current} of {progress.total}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -98,12 +123,12 @@ export const IndexingOverlay: React.FC<IndexingOverlayProps> = ({ isVisible, rep
                 <motion.div 
                   className="h-full bg-blue-500"
                   initial={{ width: "0%" }}
-                  animate={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+                  animate={{ width: `${progressValue}%` }}
                   transition={{ duration: 0.5 }}
                 />
               </div>
               <p className="text-[10px] text-slate-500 mt-3 font-mono uppercase tracking-widest">
-                Please wait while Gemini analyzes the codebase structure
+                {progress?.stage || "Please wait while Gemini analyzes the codebase structure"}
               </p>
             </div>
           </div>

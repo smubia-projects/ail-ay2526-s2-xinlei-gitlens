@@ -3,12 +3,16 @@ import { createServer as createViteServer } from "vite";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
+import axios from "axios";
+
 import { RepoModel } from "./models/Repo.js";
 import { SnippetModel } from "./models/Snippet.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 
 const execAsync = promisify(exec);
+const JWT_SECRET = process.env.SESSION_SECRET || 'gitlens-jwt-secret';
 
 dotenv.config();
 
@@ -55,7 +59,7 @@ async function startServer() {
     console.log("Mongoose disconnected");
   });
 
-  mongoose.set('debug', true);
+  // mongoose.set('debug', true);
 
   console.log("Calling mongoose.connect...");
   mongoose.connect(MONGODB_URI, { 
@@ -71,6 +75,22 @@ async function startServer() {
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
+  
+  // Middleware to extract user from JWT token
+  app.use((req: any, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        req.user = decoded.user;
+        req.githubToken = decoded.githubToken;
+      } catch (err) {
+        console.warn("Invalid token received");
+      }
+    }
+    next();
+  });
 
   // Request logger
   app.use((req, res, next) => {
@@ -137,6 +157,151 @@ async function startServer() {
     });
   });
 
+  // Auth Routes
+  app.get("/api/auth/github/url", (req, res) => {
+    const client_id = process.env.GITHUB_CLIENT_ID;
+    if (!client_id) {
+      return res.status(500).json({ error: "GITHUB_CLIENT_ID not configured" });
+    }
+    // Use APP_URL from environment for reliable redirect URI
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const redirect_uri = `${baseUrl}/api/auth/github/callback`;
+    const url = `https://github.com/login/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&scope=repo,user:email`;
+    res.json({ url });
+  });
+
+  app.get("/api/auth/github/callback", async (req, res) => {
+    const { code } = req.query;
+    if (!code) return res.status(400).send("No code provided");
+    console.log(`OAuth callback received with code: ${code.toString().substring(0, 5)}...`);
+
+    try {
+      const response = await axios.post("https://github.com/login/oauth/access_token", {
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        code,
+      }, {
+        headers: { 
+          Accept: "application/json",
+          "User-Agent": "GitLens-Cursor-App"
+        }
+      });
+
+      const { access_token, error } = response.data;
+      if (error) {
+        console.error("GitHub OAuth error:", error);
+        throw new Error(error);
+      }
+
+      if (!access_token) {
+        console.error("No access token in GitHub response:", response.data);
+        throw new Error("No access token received from GitHub");
+      }
+
+      console.log("Access token received, fetching user info...");
+      // Get user info
+      const userRes = await axios.get("https://api.github.com/user", {
+        headers: { 
+          Authorization: `token ${access_token}`,
+          "User-Agent": "GitLens-Cursor-App"
+        }
+      });
+
+      console.log(`Authenticated as GitHub user: ${userRes.data.login}`);
+
+      const userData = {
+        login: userRes.data.login,
+        id: userRes.data.id,
+        avatar_url: userRes.data.avatar_url
+      };
+
+      // Generate JWT token
+      const token = jwt.sign({ 
+        user: userData, 
+        githubToken: access_token 
+      }, JWT_SECRET, { expiresIn: '24h' });
+
+      res.send(`
+        <html>
+          <body>
+            <script>
+              console.log("Sending OAUTH_AUTH_SUCCESS message to opener...");
+              if (window.opener) {
+                window.opener.postMessage({ 
+                  type: 'OAUTH_AUTH_SUCCESS',
+                  token: '${token}',
+                  user: ${JSON.stringify(userData)}
+                }, '*');
+                setTimeout(() => window.close(), 100);
+              } else {
+                console.warn("No window.opener found, redirecting to home...");
+                window.location.href = '/';
+              }
+            </script>
+            <p>Authentication successful. This window should close automatically.</p>
+          </body>
+        </html>
+      `);
+    } catch (err: any) {
+      console.error("OAuth callback error:", err.response?.data || err.message);
+      res.status(500).send(`Authentication failed: ${err.message}`);
+    }
+  });
+
+  app.get("/api/auth/me", (req: any, res) => {
+    console.log("Auth check request received.");
+    
+    if (req.user) {
+      console.log(`Auth check: User ${req.user.login} is logged in.`);
+      res.json({ 
+        user: req.user,
+        token: req.githubToken
+      });
+    } else {
+      console.log("Auth check: No active session found.");
+      res.status(401).json({ error: "Not authenticated" });
+    }
+  });
+
+  app.get("/api/auth/logout", (req, res) => {
+    res.json({ message: "Logged out" });
+  });
+
+  app.get("/api/github/user/repos", async (req: any, res) => {
+    if (!req.githubToken) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      console.log(`Fetching repos for user with token starting with: ${req.githubToken?.substring(0, 10)}...`);
+      const response = await axios.get("https://api.github.com/user/repos", {
+        headers: { 
+          Authorization: `token ${req.githubToken}`,
+          "User-Agent": "GitLens-Cursor-App"
+        },
+        params: {
+          sort: 'updated',
+          per_page: 100,
+          visibility: 'all',
+          affiliation: 'owner,collaborator,organization_member'
+        }
+      });
+      console.log(`GitHub returned ${response.data.length} repositories.`);
+      if (response.data.length > 0) {
+        console.log("First 5 repos:", response.data.slice(0, 5).map((r: any) => r.full_name).join(", "));
+      }
+      res.json(response.data);
+    } catch (err: any) {
+      const errorData = err.response?.data;
+      const errorMessage = typeof errorData === 'object' ? JSON.stringify(errorData) : (errorData || err.message);
+      console.error("Failed to fetch user repos:", errorMessage);
+      res.status(500).json({ 
+        error: "Failed to fetch repositories from GitHub",
+        details: err.response?.data?.message || err.message
+      });
+    }
+  });
+
   // API Routes
   console.log("Registering API routes...");
   
@@ -148,7 +313,17 @@ async function startServer() {
         console.warn("Database not connected, state:", mongoose.connection.readyState);
         return res.status(503).json({ error: "Database not connected", state: mongoose.connection.readyState });
       }
-      const repos = await RepoModel.find({}, { owner: 1, name: 1, branch: 1, lastIndexed: 1, stats: 1, overview: 1 }).sort({ lastIndexed: -1 });
+      const repos = await RepoModel.find({}, { 
+        owner: 1, 
+        name: 1, 
+        branch: 1, 
+        lastIndexed: 1, 
+        stats: 1, 
+        overview: 1,
+        githubUserId: 1,
+        isTemporary: 1,
+        expiresAt: 1
+      }).sort({ lastIndexed: -1 });
       console.log(`Found ${repos.length} repos`);
       return res.json(repos);
     } catch (err: any) {
@@ -217,21 +392,60 @@ async function startServer() {
   });
 
   // Save/Update repository
-  app.post("/api/repo", async (req, res) => {
+  app.post("/api/repo", async (req: any, res) => {
     const { owner, name, branch, files, overview, stats, highlights, embedding } = req.body;
     console.log(`POST /api/repo hit for ${owner}/${name}`);
     
     try {
+      const updateData: any = { 
+        files, 
+        overview, 
+        stats, 
+        highlights, 
+        embedding,
+        lastIndexed: new Date() 
+      };
+
+      if (req.user && req.githubToken) {
+        // Authenticated user: Check permissions on GitHub
+        try {
+          console.log(`Verifying permissions for ${req.user.login} on ${owner}/${name}...`);
+          const ghRes = await axios.get(`https://api.github.com/repos/${owner}/${name}`, {
+            headers: { Authorization: `token ${req.githubToken}` }
+          });
+          
+          const permissions = ghRes.data.permissions;
+          const hasWriteAccess = permissions && (permissions.push || permissions.admin);
+          
+          if (hasWriteAccess) {
+            console.log(`User ${req.user.login} HAS write access. Assigning ownership.`);
+            updateData.githubUserId = req.user.id;
+          } else {
+            console.log(`User ${req.user.login} does NOT have write access. Making permanent but unowned.`);
+            // If it's a public repo and an authenticated user indexed it, make it permanent
+            // but don't give them "ownership" if they don't have it on GitHub
+          }
+        } catch (ghErr: any) {
+          console.error("GitHub permission check failed:", ghErr.message);
+          // Fallback: if we can't check, but user is authenticated, still make it permanent
+          // but don't assign githubUserId to be safe
+        }
+        
+        updateData.isTemporary = false;
+        updateData.$unset = { expiresAt: "" }; // Remove TTL
+      } else {
+        // Unauthenticated user: repo is temporary, expires in 24h
+        // Only set these if the repo doesn't already have an owner
+        const existingRepo = await RepoModel.findOne({ owner, name, branch });
+        if (!existingRepo || !existingRepo.githubUserId) {
+          updateData.isTemporary = true;
+          updateData.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        }
+      }
+
       const updatedRepo = await RepoModel.findOneAndUpdate(
         { owner, name, branch },
-        { 
-          files, 
-          overview, 
-          stats, 
-          highlights, 
-          embedding,
-          lastIndexed: new Date() 
-        },
+        updateData,
         { upsert: true, new: true }
       );
       return res.json(updatedRepo);
@@ -372,6 +586,7 @@ async function startServer() {
 
       // Insert new snippets in batches
       const batchSize = 50;
+      console.log(`Indexing ${snippets.length} snippets in batches of ${batchSize}...`);
       for (let i = 0; i < snippets.length; i += batchSize) {
         const batch = snippets.slice(i, i + batchSize).map((s: any) => ({
           ...s,
@@ -379,6 +594,7 @@ async function startServer() {
           owner,
           name
         }));
+        console.log(`Inserting batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(snippets.length / batchSize)}...`);
         await SnippetModel.insertMany(batch);
       }
 

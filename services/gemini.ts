@@ -373,10 +373,15 @@ export const embedText = async (text: string): Promise<number[]> => {
   while (retryCount < maxRetries) {
     try {
       const response = await getAI().models.embedContent({
-        model: "gemini-embedding-001",
+        model: "gemini-embedding-2-preview",
         contents: [{ parts: [{ text }] }],
+        config: { outputDimensionality: 768 }
       });
-      return response.embeddings[0].values;
+      const values = response.embeddings[0].values;
+      if (values.length !== 768) {
+        console.warn(`Embedding dimension mismatch: expected 768, got ${values.length}`);
+      }
+      return values;
     } catch (err: any) {
       const isUnavailable = err.message?.includes("503") || err.message?.includes("UNAVAILABLE") || err.status === 503;
       if (isUnavailable && retryCount < maxRetries - 1) {

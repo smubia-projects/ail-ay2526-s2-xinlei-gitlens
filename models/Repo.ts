@@ -10,7 +10,10 @@ const RepoSchema = new mongoose.Schema({
   stats: { type: Object, required: true },
   highlights: { type: Array, default: [] },
   embedding: { type: [Number], default: [] },
-  lastIndexed: { type: Date, default: Date.now }
+  lastIndexed: { type: Date, default: Date.now },
+  githubUserId: { type: Number, index: true }, // GitHub ID of the owner
+  isTemporary: { type: Boolean, default: false },
+  expiresAt: { type: Date, index: { expires: 0 } } // TTL index
 });
 
 // Compound index to quickly find a repo

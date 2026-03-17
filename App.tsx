@@ -80,6 +80,96 @@ export default function App() {
   const [sidebarTab, setSidebarTab] = useState<'map' | 'focus' | 'chat'>('map');
   const [view, setView] = useState<'home' | 'repo'>('home');
   const [stats, setStats] = useState<RepoStats | null>(null);
+  const [githubUser, setGithubUser] = useState<any>(null);
+  const [githubToken, setGithubToken] = useState<string | null>(null);
+  const [jwtToken, setJwtToken] = useState<string | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('gitlens_token');
+    if (token) {
+      setJwtToken(token);
+      checkAuth(token);
+    } else {
+      setIsCheckingAuth(false);
+    }
+    
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        const { token, user } = event.data;
+        if (token) {
+          localStorage.setItem('gitlens_token', token);
+          setJwtToken(token);
+          setGithubUser(user);
+          // We'll get the githubToken on the next checkAuth or we can pass it in postMessage
+          checkAuth(token);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const checkAuth = async (token?: string) => {
+    const activeToken = token || jwtToken;
+    if (!activeToken) {
+      setIsCheckingAuth(false);
+      return;
+    }
+
+    setIsCheckingAuth(true);
+    try {
+      console.log("Checking authentication status...");
+      const res = await fetch('/api/auth/me', {
+        headers: {
+          'Authorization': `Bearer ${activeToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        console.log("Auth check successful:", data.user.login);
+        setGithubUser(data.user);
+        setGithubToken(data.token);
+        setJwtToken(activeToken);
+      } else {
+        console.log("Auth check failed (Not authenticated)");
+        localStorage.removeItem('gitlens_token');
+        setGithubUser(null);
+        setGithubToken(null);
+        setJwtToken(null);
+      }
+    } catch (e) {
+      console.error("Auth check error:", e);
+      setGithubUser(null);
+      setGithubToken(null);
+      setJwtToken(null);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
+  const handleConnectGitHub = async () => {
+    try {
+      const res = await fetch('/api/auth/github/url');
+      if (res.ok) {
+        const { url } = await res.json();
+        window.open(url, 'github_oauth', 'width=600,height=700');
+      }
+    } catch (e) {
+      console.error("Failed to get auth URL", e);
+    }
+  };
+
+  const handleLogoutGitHub = async () => {
+    try {
+      localStorage.removeItem('gitlens_token');
+      setGithubUser(null);
+      setGithubToken(null);
+      setJwtToken(null);
+    } catch (e) {
+      console.error("Logout failed", e);
+    }
+  };
 
   useEffect(() => {
     let interval: any;
@@ -118,6 +208,7 @@ export default function App() {
       setRepo(parsed);
       setView('repo');
       setUrl(targetUrl);
+      setIndexingProgress({ current: 0, total: 100, stage: 'Initializing' });
 
       // 1. Check Cache first (if not force refresh)
       let repoId: string | null = null;
@@ -154,29 +245,33 @@ export default function App() {
       }
 
       // 2. Fetch from GitHub and Analyze
-      const tree = await fetchRepoTree(parsed);
+      setIndexingProgress({ current: 10, total: 100, stage: 'Fetching Repository Tree' });
+      const tree = await fetchRepoTree(parsed, githubToken || undefined);
       setFiles(tree);
       
       // Get context for better overview (package.json or README)
+      setIndexingProgress({ current: 20, total: 100, stage: 'Analyzing Project Structure' });
       let context = "";
       const contextFile = tree.find(f => f.path.toLowerCase() === 'package.json' || f.path.toLowerCase() === 'readme.md');
       if (contextFile) {
         try {
-          context = await fetchFileContent(parsed, contextFile.path);
+          context = await fetchFileContent(parsed, contextFile.path, githubToken || undefined);
         } catch (e) {
           console.warn("Failed to fetch context file", e);
         }
       }
 
+      setIndexingProgress({ current: 30, total: 100, stage: 'Generating Repository Overview' });
       const repoMap = await getRepoOverview(tree.map(f => f.path), context);
       setOverview(repoMap);
 
       // 3. Scan entry points for initial highlights
+      setIndexingProgress({ current: 40, total: 100, stage: 'Scanning Entry Points' });
       let initialHighlights: any[] = [];
       if (repoMap.entry_points && repoMap.entry_points.length > 0) {
         const topEntry = repoMap.entry_points[0].path;
         try {
-          const entryContent = await fetchFileContent(parsed, topEntry);
+          const entryContent = await fetchFileContent(parsed, topEntry, githubToken || undefined);
           initialHighlights = await analyzeFileSymbols(topEntry, entryContent);
           setActiveHighlights(initialHighlights);
         } catch (e) {
@@ -185,6 +280,7 @@ export default function App() {
       }
 
       // 4. Generate Vector Embedding for semantic search
+      setIndexingProgress({ current: 50, total: 100, stage: 'Generating Semantic Vector' });
       let vector: number[] = [];
       try {
         const embeddingText = `${repoMap.summary} ${repoMap.architecture_type} ${repoMap.core_modules.map(m => m.description).join(' ')}`;
@@ -220,6 +316,7 @@ export default function App() {
       setStats(newStats);
 
       // 5. Save to Cache and get repoId
+      setIndexingProgress({ current: 60, total: 100, stage: 'Saving to Cache' });
       try {
         const saveRes = await fetch('/api/repo', {
           method: 'POST',
@@ -259,7 +356,7 @@ export default function App() {
         for (let idx = 0; idx < codeFiles.length; idx++) {
           const file = codeFiles[idx];
           try {
-            const content = await fetchFileContent(parsed, file.path);
+            const content = await fetchFileContent(parsed, file.path, githubToken || undefined);
             const lines = content.split('\n');
             const chunkSize = 50;
             const overlap = 10;
@@ -320,7 +417,7 @@ export default function App() {
   const handleSelectFile = async (path: string, r = repo) => {
     if (!r) return;
     try {
-      const content = await fetchFileContent(r, path);
+      const content = await fetchFileContent(r, path, githubToken || undefined);
       setSelectedFile({ path, content });
       setError(null);
     } catch (err: any) {
@@ -608,8 +705,25 @@ export default function App() {
     handleFetchRepo(false, targetUrl);
   };
 
+  if (isCheckingAuth) {
+    return (
+      <div className="h-screen w-full bg-slate-950 flex flex-col items-center justify-center gap-4">
+        <Loader2 size={48} className="text-blue-500 animate-spin" />
+        <div className="text-slate-500 font-bold uppercase tracking-widest text-xs">Verifying Session...</div>
+      </div>
+    );
+  }
+
   if (view === 'home') {
-    return <HomePage onSelectRepo={handleSelectRepoFromHome} />;
+    return (
+      <HomePage 
+        onSelectRepo={handleSelectRepoFromHome} 
+        githubUser={githubUser}
+        jwtToken={jwtToken}
+        onConnectGitHub={handleConnectGitHub}
+        onLogoutGitHub={handleLogoutGitHub}
+      />
+    );
   }
 
   return (
@@ -650,7 +764,33 @@ export default function App() {
             </button>
           </div>
         <div className="flex items-center gap-4 shrink-0">
-          <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border border-slate-700 text-blue-400 shadow-inner">GC</div>
+          {githubUser ? (
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] font-bold text-white leading-none">{githubUser.login}</span>
+                <button 
+                  onClick={handleLogoutGitHub}
+                  className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase tracking-widest mt-1 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+              <img 
+                src={githubUser.avatar_url} 
+                alt={githubUser.login} 
+                className="h-8 w-8 rounded-full border border-slate-700 shadow-lg"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ) : (
+            <button 
+              onClick={handleConnectGitHub}
+              className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-all text-[10px] font-bold uppercase tracking-widest"
+            >
+              <Github size={14} />
+              Connect GitHub
+            </button>
+          )}
         </div>
       </header>
 
@@ -659,7 +799,9 @@ export default function App() {
           <Loader2 size={14} className="animate-spin" />
           <span>
             {indexingProgress 
-              ? `${indexingProgress.stage}: ${indexingProgress.current}/${indexingProgress.total} Files`
+              ? (indexingProgress.total === 100 
+                  ? `${indexingProgress.stage} (${indexingProgress.current}%)`
+                  : `${indexingProgress.stage}: ${indexingProgress.current}/${indexingProgress.total} Files`)
               : 'Mapping Repository Architecture...'}
           </span>
           {indexingProgress && (
@@ -1160,7 +1302,12 @@ export default function App() {
           </div>
         </aside>
       </main>
-      <IndexingOverlay isVisible={isIndexing} repoName={repo ? `${repo.owner}/${repo.name}` : url} loadingTime={loadingTime} />
+      <IndexingOverlay 
+        isVisible={isIndexing} 
+        repoName={repo ? `${repo.owner}/${repo.name}` : url} 
+        loadingTime={loadingTime} 
+        progress={indexingProgress}
+      />
     </div>
   );
 }
