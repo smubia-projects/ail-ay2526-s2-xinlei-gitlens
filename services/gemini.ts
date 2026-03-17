@@ -175,6 +175,7 @@ export const analyzeCode = async (
       7. Provide the 'highlights' and 'related' arrays pointing to these files so the user can navigate to them.
       8. BE CONCISE. Limit 'highlights' to the top 5 most relevant items. Limit 'related' to the top 5 items.
       9. If the user query is a simple greeting (e.g., "hi", "hello"), provide a brief, friendly response and ask how you can help. Do not generate extensive highlights for greetings.
+      10. IMPORTANT: Line numbers (start/end) MUST be realistic integers. Do NOT use placeholder large numbers. If unknown, use 1.
     `;
 
     const response = await callGemini({
@@ -201,7 +202,32 @@ export const analyzeCode = async (
     try {
       // Handle potential markdown code blocks in response
       const cleanJson = jsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
-      return JSON.parse(cleanJson) as AnalysisResult;
+      const result = JSON.parse(cleanJson) as AnalysisResult;
+
+      // Sanitize line numbers to prevent overflows or hallucinations
+      const sanitizeLine = (n: any) => {
+        const num = Number(n);
+        if (isNaN(num) || num < 1 || num > 1000000) return 1;
+        return Math.floor(num);
+      };
+
+      if (result.highlights) {
+        result.highlights = result.highlights.map(h => ({
+          ...h,
+          start: sanitizeLine(h.start),
+          end: sanitizeLine(h.end)
+        }));
+      }
+
+      if (result.related) {
+        result.related = result.related.map(r => ({
+          ...r,
+          start: sanitizeLine(r.start),
+          end: sanitizeLine(r.end)
+        }));
+      }
+
+      return result;
     } catch (e) {
       console.error("Failed to parse Gemini response as JSON:", jsonStr);
       return {

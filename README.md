@@ -10,7 +10,8 @@ GitLens Cursor AI Code Visualizer combines high-performance repository explorati
 
 ### 🔍 AI-Powered Exploration
 - **Semantic Search (RAG)**: Automatically chunks and embeds code using `gemini-embedding-001`. Relevant snippets are retrieved using MongoDB Atlas Vector Search to provide the AI with precise context.
-- **Deep Code Analysis**: Uses Gemini 3.1 Pro for complex reasoning and Flash for high-speed interactions.
+- **Deep Code Analysis**: Uses Gemini 3.1 Pro for complex reasoning and **Gemini 3 Flash** for high-speed interactions.
+- **Resilient AI Layer**: Built-in timeout handling (45s), exponential backoff for 503 errors, and automatic response sanitization to prevent hallucinated line numbers.
 - **Symbol Analysis**: Automatically identifies functions, classes, and variables with line-accurate explanations and parameter details.
 
 ### 📊 Visualization & Tracing
@@ -21,7 +22,7 @@ GitLens Cursor AI Code Visualizer combines high-performance repository explorati
 ### 🛠️ Developer Experience
 - **GitHub Integration**: Seamlessly explore any public repository by URL.
 - **Source Navigation**: Click on AI-retrieved context to jump directly to the relevant line in the code viewer.
-- **Resilient API Layer**: Built-in exponential backoff retry logic for Gemini 503 (High Demand) errors.
+- **Speed Mode**: Toggle between high-reasoning (Pro) and high-speed (Flash) models.
 - **Modern UI**: Responsive, high-performance interface built with React, Tailwind CSS, and Framer Motion.
 
 ## 🛠️ Tech Stack
@@ -43,7 +44,8 @@ GitLens Cursor AI Code Visualizer combines high-performance repository explorati
 ## 🚦 Getting Started
 
 1. **Environment Setup**:
-   - Ensure `GEMINI_API_KEY` is set in your environment.
+   - Ensure `GEMINI_API_KEY` is set in your environment (Get one at [Google AI Studio](https://aistudio.google.com/app/apikey)).
+   - *Note: Ensure you use a Gemini API key, not a Google Maps API key (which starts with `MapAPI`).*
    - Configure `MONGODB_URI` for the vector search index.
 2. **Indexing**:
    - Enter a GitHub URL.
