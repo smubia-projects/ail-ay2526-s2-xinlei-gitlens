@@ -12,6 +12,7 @@ const RepoSchema = new mongoose.Schema({
   embedding: { type: [Number], default: [] },
   lastIndexed: { type: Date, default: Date.now },
   githubUserId: { type: Number, index: true }, // GitHub ID of the owner
+  isPrivate: { type: Boolean, default: false },
   isTemporary: { type: Boolean, default: false },
   expiresAt: { type: Date, index: { expires: 0 } } // TTL index
 });

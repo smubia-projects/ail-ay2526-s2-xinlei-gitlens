@@ -306,14 +306,31 @@ async function startServer() {
   console.log("Registering API routes...");
   
   // Get all indexed repositories
-  app.get("/api/repos", async (req, res) => {
+  app.get("/api/repos", async (req: any, res) => {
     console.log("GET /api/repos hit");
     try {
       if (mongoose.connection.readyState !== 1) {
         console.warn("Database not connected, state:", mongoose.connection.readyState);
         return res.status(503).json({ error: "Database not connected", state: mongoose.connection.readyState });
       }
-      const repos = await RepoModel.find({}, { 
+
+      // Filter logic:
+      // 1. Anonymous: Show ONLY explicit public repos (isPrivate: false)
+      // 2. Logged in: Show public repos OR repos owned by the user
+      
+      let query: any;
+      if (req.user) {
+        query = {
+          $or: [
+            { isPrivate: false },
+            { githubUserId: req.user.id }
+          ]
+        };
+      } else {
+        query = { isPrivate: false };
+      }
+
+      const repos = await RepoModel.find(query, { 
         owner: 1, 
         name: 1, 
         branch: 1, 
@@ -321,10 +338,11 @@ async function startServer() {
         stats: 1, 
         overview: 1,
         githubUserId: 1,
+        isPrivate: 1,
         isTemporary: 1,
         expiresAt: 1
       }).sort({ lastIndexed: -1 });
-      console.log(`Found ${repos.length} repos`);
+      console.log(`Found ${repos.length} repos for user ${req.user?.login || 'anonymous'}. Query: ${JSON.stringify(query)}`);
       return res.json(repos);
     } catch (err: any) {
       console.error("Fetch repos error:", err);
@@ -333,13 +351,25 @@ async function startServer() {
   });
 
   // Vector Search for repositories
-  app.post("/api/repos/search", async (req, res) => {
+  app.post("/api/repos/search", async (req: any, res) => {
     const { vector, limit = 5 } = req.body;
     if (!vector || !Array.isArray(vector)) {
       return res.status(400).json({ error: "Vector array is required" });
     }
 
     try {
+      // Filter logic: same as GET /api/repos
+      const filter: any = {
+        $or: [
+          { isPrivate: false },
+          { isPrivate: { $exists: false } }
+        ]
+      };
+
+      if (req.user) {
+        filter.$or.push({ githubUserId: req.user.id });
+      }
+
       const results = await RepoModel.aggregate([
         {
           $vectorSearch: {
@@ -347,7 +377,8 @@ async function startServer() {
             path: "embedding",
             queryVector: vector,
             numCandidates: 100,
-            limit: limit
+            limit: limit,
+            filter: filter
           }
         },
         {
@@ -357,6 +388,8 @@ async function startServer() {
             branch: 1,
             overview: 1,
             stats: 1,
+            isPrivate: 1,
+            githubUserId: 1,
             score: { $meta: "vectorSearchScore" }
           }
         }
@@ -369,7 +402,7 @@ async function startServer() {
   });
 
   // Get cached repository
-  app.get("/api/repo", async (req, res) => {
+  app.get("/api/repo", async (req: any, res) => {
     const { owner, name, branch = 'main' } = req.query;
     console.log(`GET /api/repo hit for ${owner}/${name}`);
     if (!owner || !name) {
@@ -382,6 +415,10 @@ async function startServer() {
       }
       const repo = await RepoModel.findOne({ owner, name, branch });
       if (repo) {
+        // Privacy check
+        if (repo.isPrivate && (!req.user || repo.githubUserId !== req.user.id)) {
+          return res.status(403).json({ error: "Access denied to private repository" });
+        }
         return res.json(repo);
       }
       return res.status(404).json({ message: "Not found" });
@@ -397,6 +434,14 @@ async function startServer() {
     console.log(`POST /api/repo hit for ${owner}/${name}`);
     
     try {
+      // Check for existing private repo ownership
+      const existingRepo = await RepoModel.findOne({ owner, name, branch });
+      if (existingRepo && existingRepo.isPrivate) {
+        if (!req.user || existingRepo.githubUserId !== req.user.id) {
+          return res.status(403).json({ error: "Cannot update a private repository you do not own" });
+        }
+      }
+
       const updateData: any = { 
         files, 
         overview, 
@@ -417,25 +462,32 @@ async function startServer() {
           const permissions = ghRes.data.permissions;
           const hasWriteAccess = permissions && (permissions.push || permissions.admin);
           
+          updateData.isPrivate = ghRes.data.private || false;
+
           if (hasWriteAccess) {
             console.log(`User ${req.user.login} HAS write access. Assigning ownership.`);
             updateData.githubUserId = req.user.id;
           } else {
             console.log(`User ${req.user.login} does NOT have write access. Making permanent but unowned.`);
-            // If it's a public repo and an authenticated user indexed it, make it permanent
-            // but don't give them "ownership" if they don't have it on GitHub
           }
         } catch (ghErr: any) {
           console.error("GitHub permission check failed:", ghErr.message);
-          // Fallback: if we can't check, but user is authenticated, still make it permanent
-          // but don't assign githubUserId to be safe
         }
         
         updateData.isTemporary = false;
         updateData.$unset = { expiresAt: "" }; // Remove TTL
       } else {
         // Unauthenticated user: repo is temporary, expires in 24h
-        // Only set these if the repo doesn't already have an owner
+        // Try to check if it's private even for unauthenticated (it will fail if private, which is correct)
+        try {
+          const ghRes = await axios.get(`https://api.github.com/repos/${owner}/${name}`);
+          updateData.isPrivate = ghRes.data.private || false;
+        } catch (e) {
+          // If it fails, it might be private or rate limited. 
+          // For unauthenticated, we assume if we can't see it, we can't index it anyway,
+          // but if it's already in DB as private, we should keep it private.
+        }
+
         const existingRepo = await RepoModel.findOne({ owner, name, branch });
         if (!existingRepo || !existingRepo.githubUserId) {
           updateData.isTemporary = true;
@@ -456,7 +508,7 @@ async function startServer() {
   });
 
   // Delete/Clear cache
-  app.delete("/api/repo", async (req, res) => {
+  app.delete("/api/repo", async (req: any, res) => {
     const { owner, name, branch } = req.query;
     console.log(`DELETE /api/repo hit for ${owner}/${name} (branch: ${branch})`);
     
@@ -465,10 +517,17 @@ async function startServer() {
     }
 
     try {
-      // If branch is provided, use it. Otherwise, try to delete by owner/name (might delete multiple if branch is not unique, but our index is compound)
       const query: any = { owner, name };
       if (branch && branch !== 'undefined') {
         query.branch = branch;
+      }
+
+      // Privacy check before delete
+      const repo = await RepoModel.findOne(query);
+      if (repo && repo.isPrivate) {
+        if (!req.user || repo.githubUserId !== req.user.id) {
+          return res.status(403).json({ error: "Cannot delete a private repository you do not own" });
+        }
       }
       
       const result = await RepoModel.deleteOne(query);
@@ -485,13 +544,19 @@ async function startServer() {
   });
 
   // Search for symbol usages across the codebase
-  app.get("/api/search/usages", async (req, res) => {
+  app.get("/api/search/usages", async (req: any, res) => {
     const { symbol, owner, name } = req.query;
     if (!symbol) return res.status(400).json({ error: "Symbol is required" });
 
     try {
       // If owner and name are provided, search in the SnippetModel
       if (owner && name) {
+        // Privacy check
+        const repo = await RepoModel.findOne({ owner, name });
+        if (repo && repo.isPrivate && (!req.user || repo.githubUserId !== req.user.id)) {
+          return res.status(403).json({ error: "Access denied to private repository" });
+        }
+
         console.log(`Searching for usages of "${symbol}" in ${owner}/${name}`);
         
         // Use a regex with word boundaries to find whole-word matches
@@ -534,13 +599,19 @@ async function startServer() {
   });
 
   // Vector Search for code snippets
-  app.post("/api/search/snippets", async (req, res) => {
+  app.post("/api/search/snippets", async (req: any, res) => {
     const { vector, owner, name, limit = 10 } = req.body;
     if (!vector || !Array.isArray(vector)) {
       return res.status(400).json({ error: "Vector array is required" });
     }
 
     try {
+      // Privacy check
+      const repo = await RepoModel.findOne({ owner, name });
+      if (repo && repo.isPrivate && (!req.user || repo.githubUserId !== req.user.id)) {
+        return res.status(403).json({ error: "Access denied to private repository" });
+      }
+
       const results = await SnippetModel.aggregate([
         {
           $vectorSearch: {

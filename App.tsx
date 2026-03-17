@@ -71,7 +71,7 @@ export default function App() {
   const [dependencyData, setDependencyData] = useState<DependencyGraphData | null>(null);
   const [isGeneratingGraph, setIsGeneratingGraph] = useState(false);
   const [isScanningFile, setIsScanningFile] = useState(false);
-  const [useFlash, setUseFlash] = useState(false);
+  const [useFlash, setUseFlash] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentSources, setCurrentSources] = useState<{ path: string; startLine: number; endLine: number }[]>([]);
   
@@ -345,60 +345,83 @@ export default function App() {
         console.error("Failed to save to cache", saveErr);
       }
 
-      // 6. Deep Indexing: Chunk and Embed files for RAG
-      if (repoId) {
-        console.log("Starting deep indexing for snippets...");
-        const codeFiles = tree.filter(f => 
-          f.type === 'blob' && 
-          /\.(ts|tsx|js|jsx|py|go|java|cpp|c|h|cs|rb|php|rs|swift|kt)$/i.test(f.path) &&
-          !f.path.includes('node_modules') &&
-          !f.path.includes('dist')
-        ).slice(0, 50); // Limit to 50 files for now to avoid rate limits
+        // 6. Deep Indexing: Chunk and Embed files for RAG
+        if (repoId) {
+          console.log("Starting deep indexing for snippets...");
+          const codeFiles = tree.filter(f => 
+            f.type === 'blob' && 
+            /\.(ts|tsx|js|jsx|py|go|java|cpp|c|h|cs|rb|php|rs|swift|kt)$/i.test(f.path) &&
+            !f.path.includes('node_modules') &&
+            !f.path.includes('dist')
+          ).slice(0, 50); // Limit to 50 files for now to avoid rate limits
 
-        setIndexingProgress({ current: 0, total: codeFiles.length, stage: 'Deep Indexing' });
+          setIndexingProgress({ current: 0, total: codeFiles.length, stage: 'Deep Indexing' });
 
-        const allSnippets: any[] = [];
-        for (let idx = 0; idx < codeFiles.length; idx++) {
-          const file = codeFiles[idx];
-          try {
-            const content = await fetchFileContent(parsed, file.path, githubToken || undefined);
-            
-            // Get a high-level summary of the file to provide context for all chunks
-            const fileSummary = await summarizeFile(file.path, content);
-            
-            const lines = content.split('\n');
-            const chunkSize = 50;
-            const overlap = 10;
-            
-            for (let i = 0; i < lines.length; i += (chunkSize - overlap)) {
-              const chunkLines = lines.slice(i, i + chunkSize);
-              const chunkContent = chunkLines.join('\n');
-              if (chunkContent.trim().length < 50) continue;
+          const allSnippets: any[] = [];
+          const BATCH_SIZE = 5;
+          let completedFiles = 0;
 
-              // Prepend file path AND the file summary to the chunk content
-              // This gives the embedding model deep context about the file's purpose
-              const embeddingText = `File: ${file.path}\nSummary: ${fileSummary}\n\nCode:\n${chunkContent}`;
-              const chunkEmbedding = await embedText(embeddingText);
-              if (chunkEmbedding.length > 0) {
-                allSnippets.push({
-                  path: file.path,
-                  content: chunkContent,
-                  startLine: i + 1,
-                  endLine: i + chunkLines.length,
-                  embedding: chunkEmbedding
-                });
+          for (let i = 0; i < codeFiles.length; i += BATCH_SIZE) {
+            const batch = codeFiles.slice(i, i + BATCH_SIZE);
+            
+            const batchResults = await Promise.all(batch.map(async (file) => {
+              try {
+                const content = await fetchFileContent(parsed, file.path, githubToken || undefined);
+                
+                // Get a high-level summary of the file to provide context for all chunks
+                const fileSummary = await summarizeFile(file.path, content);
+                
+                const lines = content.split('\n');
+                const chunkSize = 50;
+                const overlap = 10;
+                const fileSnippets: any[] = [];
+                
+                // Process chunks for this file
+                const chunkPromises: Promise<any>[] = [];
+                for (let j = 0; j < lines.length; j += (chunkSize - overlap)) {
+                  const chunkLines = lines.slice(j, j + chunkSize);
+                  const chunkContent = chunkLines.join('\n');
+                  if (chunkContent.trim().length < 50) continue;
+
+                  // Prepend file path AND the file summary to the chunk content
+                  const embeddingText = `File: ${file.path}\nSummary: ${fileSummary}\n\nCode:\n${chunkContent}`;
+                  
+                  chunkPromises.push((async () => {
+                    const chunkEmbedding = await embedText(embeddingText);
+                    if (chunkEmbedding.length > 0) {
+                      return {
+                        path: file.path,
+                        content: chunkContent,
+                        startLine: j + 1,
+                        endLine: j + chunkLines.length,
+                        embedding: chunkEmbedding
+                      };
+                    }
+                    return null;
+                  })());
+                }
+
+                const results = await Promise.all(chunkPromises);
+                fileSnippets.push(...results.filter(r => r !== null));
+                
+                completedFiles++;
+                setIndexingProgress(prev => prev ? { ...prev, current: completedFiles } : null);
+                return fileSnippets;
+              } catch (e) {
+                console.warn(`Failed to index ${file.path}`, e);
+                completedFiles++;
+                setIndexingProgress(prev => prev ? { ...prev, current: completedFiles } : null);
+                return [];
               }
-            }
-            setIndexingProgress(prev => prev ? { ...prev, current: idx + 1 } : null);
-            
-            // Small delay to avoid rate limits
-            if (idx % 2 === 0) await new Promise(r => setTimeout(r, 100));
-          } catch (e) {
-            console.warn(`Failed to index ${file.path}`, e);
-          }
-        }
+            }));
 
-        if (allSnippets.length > 0) {
+            batchResults.forEach(res => allSnippets.push(...res));
+            
+            // Small delay between batches to avoid rate limits
+            await new Promise(r => setTimeout(r, 200));
+          }
+
+          if (allSnippets.length > 0) {
           setIndexingProgress(prev => prev ? { ...prev, stage: 'Saving Index' } : null);
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (jwtToken) {
@@ -491,6 +514,7 @@ export default function App() {
     setSidebarTab('chat');
     setError(null);
     setCurrentSources([]);
+    const loadingId = Math.random().toString(36).substring(7);
     try {
       // 1. Semantic Search for relevant snippets
       let snippets: any[] = [];
@@ -519,6 +543,8 @@ export default function App() {
       }
 
       // 2. Call Gemini with context
+      setMessages(prev => [...prev, { role: 'assistant', content: "...", id: loadingId }]);
+      
       const rawAnalysis = await analyzeCode(
         userQuery, 
         selectedFile, 
@@ -534,12 +560,12 @@ export default function App() {
         analysis.highlights = refineHighlights(analysis.highlights, selectedFile.content);
       }
 
-      setMessages(prev => [...prev, { 
+      setMessages(prev => prev.map(m => m.id === loadingId ? { 
         role: 'assistant', 
         content: analysis.answer_markdown, 
         analysis,
         sources: currentSources.length > 0 ? currentSources : undefined
-      }]);
+      } : m));
       if (analysis.highlights.length > 0) {
         // Merge with existing highlights instead of overwriting
         setActiveHighlights(prev => {
@@ -554,9 +580,13 @@ export default function App() {
           handleSelectFile(fileExists.path);
         }
       }
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { role: 'assistant', content: "Analysis failed. Please try again later." }]);
+    } catch (err: any) {
+      console.error("Analysis Error:", err);
+      const errorMessage = err.message || "Unknown error";
+      setMessages(prev => prev.map(m => m.id === loadingId ? { 
+        role: 'assistant', 
+        content: `Analysis failed: ${errorMessage}. Please try again.` 
+      } : m));
     } finally {
       setIsLoading(false);
       console.timeEnd("runAnalysis");

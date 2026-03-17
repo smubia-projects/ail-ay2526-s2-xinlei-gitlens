@@ -9,6 +9,8 @@ function getAI() {
     const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
       console.warn("GEMINI_API_KEY is not set. API calls will fail.");
+    } else if (apiKey.startsWith("MapAPI")) {
+      console.warn("The GEMINI_API_KEY appears to be a Google Maps API key. Please use a Gemini API key from https://aistudio.google.com/app/apikey");
     }
     aiInstance = new GoogleGenAI({ apiKey: apiKey || "" });
   }
@@ -96,13 +98,17 @@ async function callGemini(params: any, maxRetries = 3): Promise<any> {
   let retryCount = 0;
   while (retryCount < maxRetries) {
     try {
-      return await getAI().models.generateContent(params);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Gemini API request timed out")), 45000)
+      );
+      const contentPromise = getAI().models.generateContent(params);
+      return await Promise.race([contentPromise, timeoutPromise]);
     } catch (err: any) {
-      const isUnavailable = err.message?.includes("503") || err.message?.includes("UNAVAILABLE") || err.status === 503;
+      const isUnavailable = err.message?.includes("503") || err.message?.includes("UNAVAILABLE") || err.status === 503 || err.message?.includes("timed out");
       if (isUnavailable && retryCount < maxRetries - 1) {
         retryCount++;
         const delay = Math.pow(2, retryCount) * 1000;
-        console.warn(`Gemini API unavailable (503). Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
+        console.warn(`Gemini API issue. Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -167,6 +173,8 @@ export const analyzeCode = async (
       5. If you don't have the content for a file but know it's relevant, include it in 'highlights' with start=1 and end=1.
       6. If you ARE analyzing the current file content or a provided snippet, you MUST provide EXACT line numbers for the 'start' and 'end' properties.
       7. Provide the 'highlights' and 'related' arrays pointing to these files so the user can navigate to them.
+      8. BE CONCISE. Limit 'highlights' to the top 5 most relevant items. Limit 'related' to the top 5 items.
+      9. If the user query is a simple greeting (e.g., "hi", "hello"), provide a brief, friendly response and ask how you can help. Do not generate extensive highlights for greetings.
     `;
 
     const response = await callGemini({
@@ -176,7 +184,7 @@ export const analyzeCode = async (
           { text: `REPO OVERVIEW: ${overview ? JSON.stringify(overview) : 'N/A'}` },
           { text: `CURRENT OPEN FILE (${currentFile?.path || 'None'}): \n\n${contentWithLines}` },
           { text: `RELEVANT CODE SNIPPETS (FROM SEMANTIC SEARCH):\n\n${snippetsContext}` },
-          { text: `FILES IN REPO (TOTAL ${fileList.length}): ${fileList.slice(0, 1000).join(", ")}` },
+          { text: `FILES IN REPO (TOTAL ${fileList.length}): ${fileList.slice(0, 500).join(", ")}${fileList.length > 500 ? '... (truncated)' : ''}` },
           { text: `USER QUESTION: ${query}` }
         ]
       },
@@ -184,12 +192,24 @@ export const analyzeCode = async (
         systemInstruction,
         responseMimeType: "application/json",
         responseSchema: ANALYSIS_SCHEMA,
+        maxOutputTokens: 4096,
       },
     });
 
     const jsonStr = response.text?.trim() || '{}';
     console.timeEnd("analyzeCode");
-    return JSON.parse(jsonStr) as AnalysisResult;
+    try {
+      // Handle potential markdown code blocks in response
+      const cleanJson = jsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+      return JSON.parse(cleanJson) as AnalysisResult;
+    } catch (e) {
+      console.error("Failed to parse Gemini response as JSON:", jsonStr);
+      return {
+        answer_markdown: response.text || "I encountered an error parsing the analysis. Please try again.",
+        highlights: [],
+        related: []
+      };
+    }
   } catch (err: any) {
     console.timeEnd("analyzeCode");
     throw err;

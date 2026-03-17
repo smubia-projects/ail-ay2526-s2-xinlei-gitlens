@@ -11,6 +11,7 @@ interface IndexedRepo {
   stats: RepoStats;
   overview: RepoOverview;
   githubUserId?: number;
+  isPrivate?: boolean;
   isTemporary?: boolean;
   expiresAt?: string;
 }
@@ -399,7 +400,14 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                         </div>
                       )}
 
-                      {repo.githubUserId && (
+                      {repo.isPrivate && (
+                        <div className={`absolute top-4 ${repo.githubUserId === githubUser?.id ? 'left-20' : 'left-4'} bg-red-500/10 text-red-400 px-2 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border border-red-500/20 flex items-center gap-1`}>
+                          <ShieldCheck size={10} />
+                          Private
+                        </div>
+                      )}
+
+                      {repo.githubUserId && repo.githubUserId === githubUser?.id && (
                         <div className="absolute top-4 left-4 bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border border-emerald-500/20 flex items-center gap-1">
                           <ShieldCheck size={10} />
                           Owned

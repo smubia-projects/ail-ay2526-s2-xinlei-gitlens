@@ -78,6 +78,7 @@ export interface AnalysisResult {
 }
 
 export interface ChatMessage {
+  id?: string;
   role: 'user' | 'assistant';
   content: string;
   analysis?: AnalysisResult;
