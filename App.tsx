@@ -5,7 +5,7 @@ import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
 import { Repository, RepoFile, ChatMessage, AnalysisResult, Highlight, RepoOverview, DependencyGraphData, RepoStats } from './types';
 import { parseRepoUrl, fetchRepoTree, fetchFileContent } from './services/github';
-import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples } from './services/gemini';
+import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples, summarizeFile } from './services/gemini';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -318,9 +318,14 @@ export default function App() {
       // 5. Save to Cache and get repoId
       setIndexingProgress({ current: 60, total: 100, stage: 'Saving to Cache' });
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (jwtToken) {
+          headers['Authorization'] = `Bearer ${jwtToken}`;
+        }
+
         const saveRes = await fetch('/api/repo', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             owner: parsed.owner,
             name: parsed.name,
@@ -357,6 +362,10 @@ export default function App() {
           const file = codeFiles[idx];
           try {
             const content = await fetchFileContent(parsed, file.path, githubToken || undefined);
+            
+            // Get a high-level summary of the file to provide context for all chunks
+            const fileSummary = await summarizeFile(file.path, content);
+            
             const lines = content.split('\n');
             const chunkSize = 50;
             const overlap = 10;
@@ -366,7 +375,10 @@ export default function App() {
               const chunkContent = chunkLines.join('\n');
               if (chunkContent.trim().length < 50) continue;
 
-              const chunkEmbedding = await embedText(chunkContent);
+              // Prepend file path AND the file summary to the chunk content
+              // This gives the embedding model deep context about the file's purpose
+              const embeddingText = `File: ${file.path}\nSummary: ${fileSummary}\n\nCode:\n${chunkContent}`;
+              const chunkEmbedding = await embedText(embeddingText);
               if (chunkEmbedding.length > 0) {
                 allSnippets.push({
                   path: file.path,
@@ -388,9 +400,14 @@ export default function App() {
 
         if (allSnippets.length > 0) {
           setIndexingProgress(prev => prev ? { ...prev, stage: 'Saving Index' } : null);
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (jwtToken) {
+            headers['Authorization'] = `Bearer ${jwtToken}`;
+          }
+
           await fetch('/api/repo/index-snippets', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({
               owner: parsed.owner,
               name: parsed.name,
@@ -468,9 +485,10 @@ export default function App() {
     });
   };
 
-  const runAnalysis = async (userQuery: string) => {
+  const runAnalysis = async (userQuery: string, forceFlash = false) => {
     console.time("runAnalysis");
     setIsLoading(true);
+    setSidebarTab('chat');
     setError(null);
     setCurrentSources([]);
     try {
@@ -506,7 +524,7 @@ export default function App() {
         selectedFile, 
         files.map(f => f.path), 
         overview, 
-        useFlash,
+        forceFlash || useFlash,
         snippets // Pass snippets as context
       );
       const analysis = { ...rawAnalysis };
@@ -584,23 +602,58 @@ export default function App() {
          });
          setFocusedFunction(highlight);
          setSidebarTab('focus');
-       } else if (line) {
-         const jumpHighlight = { file: path, start: line, end: line, label: 'Jumped here', description: '', logic_source: '' };
-         setActiveHighlights(prev => [...prev, jumpHighlight]);
+       } else {
+         // Even without a specific highlight, switch to focus tab to show file symbols
+         setSidebarTab('focus');
+         if (line) {
+           const jumpHighlight = { file: path, start: line, end: line, label: 'Jumped here', description: '', logic_source: '' };
+           setActiveHighlights(prev => [...prev, jumpHighlight]);
+         }
        }
     }
   };
 
   const handleModuleClick = (moduleName: string, description: string) => {
-    const moduleQuery = `Explain the core logic and responsibility of the "${moduleName}" module. ${description}`;
     setMessages(prev => [...prev, { role: 'user', content: `Explaining core module: ${moduleName}` }]);
     setFocusedFunction(null);
-    const moduleFiles = files.filter(f => f.path.startsWith(moduleName) && f.type === 'blob');
+    
+    // Find files in this module - more robust matching
+    const moduleFiles = files.filter(f => 
+      (f.path.startsWith(moduleName) || f.path.includes(`/${moduleName}/`)) && 
+      f.type === 'blob'
+    );
+    
     if (moduleFiles.length > 0) {
-      const priority = moduleFiles.find(f => f.path.includes('index') || f.path.includes('main') || f.path.includes('core'));
+      const priority = moduleFiles.find(f => 
+        f.path.toLowerCase().includes('index') || 
+        f.path.toLowerCase().includes('main') || 
+        f.path.toLowerCase().includes('core') ||
+        f.path.toLowerCase().includes('controller') ||
+        f.path.toLowerCase().includes('route')
+      );
       handleSelectFile((priority || moduleFiles[0]).path);
     }
-    runAnalysis(moduleQuery);
+
+    // FAST PATH: Use cached description from indexing overview
+    const cachedAnalysis: AnalysisResult = {
+      answer_markdown: `### ${moduleName} Module\n\n${description}\n\n---\n*This summary was retrieved instantly from the repository index. For a deeper implementation analysis, you can ask a specific question in the chat.*`,
+      highlights: moduleFiles.slice(0, 5).map(f => ({
+        file: f.path,
+        start: 1,
+        end: 1,
+        label: f.path.split('/').pop() || f.path,
+        description: `Key file within the ${moduleName} module.`,
+        logic_source: `Identified via Repository Structure (${moduleName})`
+      })),
+      related: []
+    };
+
+    setMessages(prev => [...prev, { 
+      role: 'assistant', 
+      content: cachedAnalysis.answer_markdown,
+      analysis: cachedAnalysis
+    }]);
+    setSidebarTab('chat');
   };
 
   const handleVisualizeDependencies = async (h: Highlight) => {
@@ -999,12 +1052,18 @@ export default function App() {
 
                       <div className="space-y-5">
                         <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                          <div className="text-[10px] text-slate-600 uppercase font-black mb-2 flex items-center gap-2 tracking-widest"><Info size={14} className="text-blue-500" /> Responsibility</div>
+                          <div className="text-[10px] text-slate-600 uppercase font-black mb-2 flex items-center gap-2 tracking-widest">
+                            <Info size={14} className="text-blue-500" /> 
+                            {focusedFunction.logic_source === 'Repository Structure' ? 'Role in Module' : 'Responsibility'}
+                          </div>
                           <p className="text-[13px] text-slate-300 leading-relaxed">{focusedFunction.description || focusedFunction.explanation}</p>
                         </div>
 
                         <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                          <div className="text-[10px] text-slate-600 uppercase font-black mb-2 flex items-center gap-2 tracking-widest"><ArrowRightCircle size={14} className="text-blue-500" /> Data Flow</div>
+                          <div className="text-[10px] text-slate-600 uppercase font-black mb-2 flex items-center gap-2 tracking-widest">
+                            <ArrowRightCircle size={14} className="text-blue-500" /> 
+                            {focusedFunction.logic_source === 'Repository Structure' ? 'Context' : 'Data Flow'}
+                          </div>
                           <p className="text-[13px] text-slate-300 leading-relaxed italic opacity-80">{focusedFunction.logic_source || "Input/Output Signature"}</p>
                           {(focusedFunction.params || focusedFunction.returns) && (
                             <div className="mt-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10 space-y-2">

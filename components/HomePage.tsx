@@ -139,7 +139,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
     
     try {
       const url = `/api/repo?owner=${encodeURIComponent(owner)}&name=${encodeURIComponent(name)}&branch=${encodeURIComponent(branch)}`;
-      const res = await fetch(url, { method: 'DELETE' });
+      const headers: Record<string, string> = {};
+      if (jwtToken) {
+        headers['Authorization'] = `Bearer ${jwtToken}`;
+      }
+      
+      const res = await fetch(url, { 
+        method: 'DELETE',
+        headers
+      });
       
       if (res.ok) {
         setRepos(prev => prev.filter(r => !(r.owner === owner && r.name === name && r.branch === branch)));

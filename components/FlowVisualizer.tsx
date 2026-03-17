@@ -36,29 +36,29 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
     svg.append("defs").append("marker")
       .attr("id", "arrowhead")
       .attr("viewBox", "-0 -5 10 10")
-      .attr("refX", 20)
+      .attr("refX", 25) // Adjusted to be outside the node rect
       .attr("refY", 0)
       .attr("orient", "auto")
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
+      .attr("markerWidth", 8)
+      .attr("markerHeight", 8)
       .attr("xoverflow", "visible")
       .append("svg:path")
       .attr("d", "M 0,-5 L 10 ,0 L 0,5")
-      .attr("fill", "rgba(59, 130, 246, 0.5)")
+      .attr("fill", "#3b82f6") // Solid blue for better visibility
       .style("stroke", "none");
 
     const simulation = d3.forceSimulation(data.nodes as any)
-      .force("link", d3.forceLink(data.links).id((d: any) => d.id).distance(150))
-      .force("charge", d3.forceManyBody().strength(-500))
+      .force("link", d3.forceLink(data.links).id((d: any) => d.id).distance(180)) // Increased distance
+      .force("charge", d3.forceManyBody().strength(-600))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(60));
+      .force("collision", d3.forceCollide().radius(80));
 
     const link = g.append("g")
       .selectAll("line")
       .data(data.links)
       .enter()
       .append("line")
-      .attr("stroke", "rgba(59, 130, 246, 0.2)")
+      .attr("stroke", "rgba(59, 130, 246, 0.4)") // Increased opacity
       .attr("stroke-width", 2)
       .attr("marker-end", "url(#arrowhead)");
 
@@ -246,19 +246,105 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
                   )}
                 </div>
               ) : (
-                <div className="animate-in fade-in duration-300">
-                  {data.call_flow_markdown ? (
-                    <div className="bg-slate-950/80 border border-slate-800 p-6 rounded-2xl">
-                      <div className="text-[10px] text-blue-400 uppercase font-black mb-4 flex items-center gap-2 tracking-widest">
-                        <Network size={14} /> Call Hierarchy
+    <div className="animate-in fade-in duration-300">
+      {data.call_flow_markdown ? (
+        <div className="bg-slate-950/80 border border-slate-800 p-6 rounded-2xl overflow-hidden shadow-inner">
+          <div className="text-[12px] text-blue-400 uppercase font-black mb-6 flex items-center gap-2 tracking-[0.2em] border-b border-blue-500/20 pb-3">
+            <Network size={16} className="text-blue-500" /> Call Hierarchy & Logic Trace
+          </div>
+          <div className="text-[12px] leading-relaxed pl-3 border-l border-blue-500/30 overflow-x-auto">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                p({ children }) {
+                  const content = React.Children.toArray(children).join('');
+                  const isMermaid = content.trim().startsWith('graph TD') || content.trim().startsWith('flowchart');
+                  
+                  if (isMermaid) {
+                    return (
+                      <div className="my-4 p-3 bg-blue-500/5 border border-dashed border-blue-500/20 rounded-xl relative overflow-x-auto">
+                        <div className="absolute top-1.5 right-2.5 text-[7px] font-black text-blue-500/30 uppercase tracking-widest">Logic Flow Map</div>
+                        <code className="block font-mono text-[10px] text-blue-200 whitespace-pre leading-relaxed">
+                          {content}
+                        </code>
                       </div>
-                      <div className="markdown-body prose prose-invert prose-slate max-w-none text-[12px] leading-relaxed pl-3 border-l border-blue-500/30">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {data.call_flow_markdown}
-                        </ReactMarkdown>
+                    );
+                  }
+
+                  if (content.startsWith('[STEP')) {
+                    return (
+                      <div className="mt-8 mb-3 text-blue-400 font-black uppercase tracking-tight text-[14px] border-b border-blue-500/20 pb-2 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                        {children}
                       </div>
-                    </div>
-                  ) : (
+                    );
+                  }
+                  if (content.includes('Step-by-Step Breakdown')) {
+                    return (
+                      <div className="text-[15px] font-black text-white mt-10 mb-6 border-b-2 border-slate-800 pb-3 uppercase tracking-widest">
+                        {children}
+                      </div>
+                    );
+                  }
+                  return <div className="mb-3 last:mb-0 text-slate-300">{children}</div>;
+                },
+                ul({ children }) {
+                  return <ul className="space-y-4 my-4">{children}</ul>;
+                },
+                li({ children }) {
+                  return <li className="text-[12px] leading-relaxed list-none">{children}</li>;
+                },
+                strong({ children }) {
+                  const rawLabel = React.Children.toArray(children).join('');
+                  const cleanLabel = rawLabel.replace(/[:\s]+$/, '');
+                  const isLabel = ['Action', 'Logic', 'Data', 'Input', 'Transformation', 'Variable', 'Returns'].some(l => cleanLabel.toLowerCase().startsWith(l.toLowerCase()));
+                  if (isLabel) {
+                    return (
+                      <div className="mt-2 first:mt-0">
+                        <span className="text-blue-400/80 font-bold mr-1 uppercase text-[9px] tracking-wider">{cleanLabel}:</span>
+                      </div>
+                    );
+                  }
+                  return <strong className="text-white font-bold">{children}</strong>;
+                },
+                code({ node, inline, className, children, ...props }: any) {
+                  const content = String(children).trim();
+                  const isMermaid = content.startsWith('graph TD') || content.startsWith('flowchart');
+
+                  if (inline) {
+                    return (
+                      <code className="bg-slate-800/50 px-1.5 py-0.5 rounded text-blue-300 font-mono text-[11px] border border-slate-700/30" {...props}>
+                        {children}
+                      </code>
+                    );
+                  }
+
+                  if (isMermaid) {
+                    return (
+                      <div className="my-4 p-3 bg-blue-500/5 border border-dashed border-blue-500/20 rounded-xl relative overflow-x-auto">
+                        <div className="absolute top-1.5 right-2.5 text-[7px] font-black text-blue-500/30 uppercase tracking-widest">Logic Flow Map</div>
+                        <code className="block font-mono text-[10px] text-blue-200 whitespace-pre leading-relaxed" {...props}>
+                          {children}
+                        </code>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <span className="inline-block overflow-x-auto max-w-full my-0.5 align-middle">
+                      <code className="inline-block bg-slate-900/80 px-2 py-0.5 rounded-md border border-slate-800 text-blue-200 whitespace-pre font-mono text-[11px] leading-tight" {...props}>
+                        {children}
+                      </code>
+                    </span>
+                  );
+                }
+              }}
+            >
+              {data.call_flow_markdown}
+            </ReactMarkdown>
+          </div>
+        </div>
+      ) : (
                     <div className="h-64 flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50">
                       <GitBranch size={48} />
                       <p className="text-xs font-medium">No trace map generated</p>

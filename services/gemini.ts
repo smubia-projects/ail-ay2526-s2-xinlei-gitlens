@@ -213,19 +213,31 @@ export const getFunctionFlow = async (functionName: string, fileContent: string)
     contents: `Trace the data flow and call hierarchy for "${functionName}" in this code:\n\n${fileContent}`,
     config: {
       systemInstruction: `You are a code flow analyzer. 
-      Your goal is to provide a highly structured, step-by-step visual trace of the function.
+      Your goal is to provide a highly structured, visual trace of the function.
       
       FORMAT RULES:
-      1. Use a "Step-by-Step" approach.
-      2. For each step, identify:
-         - **Action**: What is happening (e.g., "Input Validation", "API Call").
-         - **Logic**: A brief description of the code logic.
-         - **Data**: What data is being transformed or passed.
-      3. Use visual indicators like [STEP 1], [STEP 2], etc.
-      4. If there are external dependencies, highlight them clearly.
-      5. End with a "Summary of Responsibility".
+      1. START with a Mermaid "graph TD" block for high-level flow.
+      2. FOLLOW with a "Step-by-Step Breakdown" section header.
+      3. Use a Markdown LIST (using -) for each step ([STEP 1], [STEP 2], etc.).
+      4. Inside each step list item, use these EXACT bullet points (DO NOT add colons after the bold text, the UI handles it):
+         - **Action** description...
+         - **Logic** description...
+         - **Data** description with variables in \`name | type\` format.
+      5. DO NOT put code symbols on their own lines; keep them inline.
+      6. Keep descriptions under 2 sentences per bullet.
+      7. End with a "Summary of Responsibility".
       
-      Avoid long paragraphs. Use bullet points and bold text for readability.`,
+      EXAMPLE:
+      \`\`\`mermaid
+      graph TD
+        A[Start] --> B[End]
+      \`\`\`
+      
+      Step-by-Step Breakdown
+      - [STEP 1] Initialization
+        - **Action** Extracts session data.
+        - **Logic** Uses \`req.session\`.
+        - **Data** \`sessionUser | Object\``,
     },
   });
   return response.text || "No flow data available.";
@@ -366,6 +378,22 @@ export const getUsageExamples = async (
   const jsonStr = response.text?.trim() || "[]";
   return JSON.parse(jsonStr);
 };
+export const summarizeFile = async (path: string, content: string): Promise<string> => {
+  try {
+    const response = await callGemini({
+      model: "gemini-3-flash-preview",
+      contents: `Provide a concise 1-sentence summary of the purpose and main responsibility of this file: ${path}\n\nCONTENT:\n${content.slice(0, 10000)}`,
+      config: {
+        systemInstruction: "You are a technical architect. Summarize the file's primary role in the system.",
+      },
+    });
+    return response.text?.trim() || "No summary available.";
+  } catch (err) {
+    console.warn(`Failed to summarize ${path}`, err);
+    return "Code file.";
+  }
+};
+
 export const embedText = async (text: string): Promise<number[]> => {
   const maxRetries = 3;
   let retryCount = 0;
