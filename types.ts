@@ -85,6 +85,17 @@ export interface ChatMessage {
   sources?: { path: string; startLine: number; endLine: number }[];
 }
 
+export type AIProvider = 'gemini' | 'openai';
+
+export interface AIConfig {
+  provider: AIProvider;
+  apiKey?: string;
+  baseUrl?: string;
+  chatModel?: string;
+  embeddingModel?: string;
+  useFlash?: boolean;
+}
+
 export interface Repository {
   owner: string;
   name: string;

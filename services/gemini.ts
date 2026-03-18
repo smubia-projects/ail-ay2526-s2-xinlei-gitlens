@@ -1,15 +1,33 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, RepoOverview } from "../types.js";
+import { AnalysisResult, RepoOverview, AIConfig } from "../types.js";
 
 let aiInstance: GoogleGenAI | null = null;
+const getInitialConfig = (): AIConfig => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('ai_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+  }
+  return { provider: 'gemini' };
+};
+
+let currentConfig: AIConfig = getInitialConfig();
+
+export const setAIConfig = (config: AIConfig) => {
+  currentConfig = config;
+  aiInstance = null;
+};
 
 function getAI() {
   if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-    if (!apiKey) {
+    const apiKey = currentConfig.apiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
+    if (!apiKey && currentConfig.provider === 'gemini') {
       console.warn("GEMINI_API_KEY is not set. API calls will fail.");
-    } else if (apiKey.startsWith("MapAPI")) {
+    } else if (apiKey?.startsWith("MapAPI")) {
       console.warn("The GEMINI_API_KEY appears to be a Google Maps API key. Please use a Gemini API key from https://aistudio.google.com/app/apikey");
     }
     aiInstance = new GoogleGenAI({ apiKey: apiKey || "" });
@@ -61,8 +79,8 @@ const ANALYSIS_SCHEMA = {
         type: Type.OBJECT,
         properties: {
           file: { type: Type.STRING },
-          start: { type: Type.NUMBER, description: "Line number where the logic starts. Use 1 if unknown." },
-          end: { type: Type.NUMBER, description: "Line number where the logic ends. Use 1 if unknown." },
+          start: { type: Type.INTEGER, description: "Line number where the logic starts. Use 1 if unknown." },
+          end: { type: Type.INTEGER, description: "Line number where the logic ends. Use 1 if unknown." },
           label: { type: Type.STRING },
           function_name: { type: Type.STRING },
           params: { type: Type.STRING, description: "Comma separated parameters with types if possible." },
@@ -84,8 +102,8 @@ const ANALYSIS_SCHEMA = {
         properties: {
           symbol: { type: Type.STRING },
           file: { type: Type.STRING },
-          start: { type: Type.NUMBER },
-          end: { type: Type.NUMBER },
+          start: { type: Type.INTEGER },
+          end: { type: Type.INTEGER },
         },
         required: ["symbol", "file", "start", "end"],
       },
@@ -94,7 +112,66 @@ const ANALYSIS_SCHEMA = {
   required: ["answer_markdown", "highlights", "related"],
 };
 
+async function callOpenAI(params: any): Promise<any> {
+  const baseUrl = (currentConfig.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const apiKey = currentConfig.apiKey;
+  const model = currentConfig.chatModel || params.model || 'gpt-4o';
+
+  const messages = [];
+  if (params.config?.systemInstruction) {
+    messages.push({ role: 'system', content: params.config.systemInstruction });
+  }
+
+  if (typeof params.contents === 'string') {
+    messages.push({ role: 'user', content: params.contents });
+  } else if (params.contents?.parts) {
+    const content = params.contents.parts.map((p: any) => p.text).join('\n');
+    messages.push({ role: 'user', content });
+  } else if (Array.isArray(params.contents)) {
+    // Handle chat history or multiple parts if needed
+    // For now, simple mapping
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      response_format: params.config?.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || `OpenAI API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return {
+    text: data.choices[0].message.content
+  };
+}
+
 async function callGemini(params: any, maxRetries = 3): Promise<any> {
+  if (currentConfig.provider === 'openai') {
+    console.log(`[AI] Calling OpenAI SDK API (${currentConfig.baseUrl || 'https://api.openai.com/v1'}) - Model: ${currentConfig.chatModel || params.model || 'gpt-4o'}`);
+    return callOpenAI(params);
+  }
+
+  const isFlash = currentConfig.useFlash || params.model?.includes('flash');
+  const model = isFlash ? "gemini-3-flash-preview" : "gemini-3.1-pro-preview";
+  
+  // Override model if not explicitly forced by the specific call logic
+  if (!params.model || params.model.startsWith('gemini')) {
+    params.model = model;
+  }
+
+  console.log(`[AI] Calling Gemini Native API - Model: ${params.model}`);
+  
   let retryCount = 0;
   while (retryCount < maxRetries) {
     try {
@@ -176,6 +253,7 @@ export const analyzeCode = async (
       8. BE CONCISE. Limit 'highlights' to the top 5 most relevant items. Limit 'related' to the top 5 items.
       9. If the user query is a simple greeting (e.g., "hi", "hello"), provide a brief, friendly response and ask how you can help. Do not generate extensive highlights for greetings.
       10. IMPORTANT: Line numbers (start/end) MUST be realistic integers. Do NOT use placeholder large numbers. If unknown, use 1.
+      11. KEEP IT SHORT: The 'answer_markdown' should be concise (max 300 words).
     `;
 
     const response = await callGemini({
@@ -197,12 +275,47 @@ export const analyzeCode = async (
       },
     });
 
-    const jsonStr = response.text?.trim() || '{}';
+    let jsonStr = response.text?.trim() || '{}';
+    
+    // Aggressively truncate any numeric strings that are too long to be real line numbers
+    // This prevents token limit issues and parsing errors from hallucinations
+    jsonStr = jsonStr.replace(/:\s*(\d{10,})/g, ': 1');
+
     console.timeEnd("analyzeCode");
     try {
       // Handle potential markdown code blocks in response
-      const cleanJson = jsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
-      const result = JSON.parse(cleanJson) as AnalysisResult;
+      let cleanJson = jsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+      
+      // Attempt to repair truncated JSON if necessary
+      const repairJson = (json: string) => {
+        let stack: string[] = [];
+        let inString = false;
+        let escaped = false;
+        for (let i = 0; i < json.length; i++) {
+          const char = json[i];
+          if (escaped) { escaped = false; continue; }
+          if (char === '\\') { escaped = true; continue; }
+          if (char === '"') { inString = !inString; continue; }
+          if (!inString) {
+            if (char === '{' || char === '[') stack.push(char === '{' ? '}' : ']');
+            else if (char === '}' || char === ']') {
+              if (stack.length > 0 && stack[stack.length - 1] === char) stack.pop();
+            }
+          }
+        }
+        let repaired = json;
+        if (inString) repaired += '"';
+        while (stack.length > 0) repaired += stack.pop();
+        return repaired;
+      };
+
+      let result: AnalysisResult;
+      try {
+        result = JSON.parse(cleanJson) as AnalysisResult;
+      } catch (firstError) {
+        cleanJson = repairJson(cleanJson);
+        result = JSON.parse(cleanJson) as AnalysisResult;
+      }
 
       // Sanitize line numbers to prevent overflows or hallucinations
       const sanitizeLine = (n: any) => {
@@ -230,8 +343,11 @@ export const analyzeCode = async (
       return result;
     } catch (e) {
       console.error("Failed to parse Gemini response as JSON:", jsonStr);
+      // If parsing fails, don't just dump the raw JSON into the answer
+      const fallbackMessage = "I encountered an error parsing the analysis. This can happen if the response was too complex or contained invalid data. Please try asking a more specific question.";
+      
       return {
-        answer_markdown: response.text || "I encountered an error parsing the analysis. Please try again.",
+        answer_markdown: jsonStr.length > 500 ? fallbackMessage : (jsonStr || fallbackMessage),
         highlights: [],
         related: []
       };
@@ -441,11 +557,44 @@ export const summarizeFile = async (path: string, content: string): Promise<stri
 };
 
 export const embedText = async (text: string): Promise<number[]> => {
+  if (currentConfig.provider === 'openai') {
+    console.log(`[AI] Calling OpenAI SDK API for Embedding (${currentConfig.baseUrl || 'https://api.openai.com/v1'}) - Model: ${currentConfig.embeddingModel || 'text-embedding-3-small'}`);
+    try {
+      const baseUrl = (currentConfig.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
+      const apiKey = currentConfig.apiKey;
+      const model = currentConfig.embeddingModel || 'text-embedding-3-small';
+
+      const response = await fetch(`${baseUrl}/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          input: text,
+          model
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error?.message || `OpenAI Embedding error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.data[0].embedding;
+    } catch (err) {
+      console.error("OpenAI Embedding failed:", err);
+      return [];
+    }
+  }
+
   const maxRetries = 3;
   let retryCount = 0;
 
   while (retryCount < maxRetries) {
     try {
+      console.log(`[AI] Calling Gemini Native API for Embedding`);
       const response = await getAI().models.embedContent({
         model: "gemini-embedding-2-preview",
         contents: [{ parts: [{ text }] }],

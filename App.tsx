@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode } from 'lucide-react';
+import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode, Settings } from 'lucide-react';
 import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
-import { Repository, RepoFile, ChatMessage, AnalysisResult, Highlight, RepoOverview, DependencyGraphData, RepoStats } from './types';
+import { Repository, RepoFile, ChatMessage, AnalysisResult, Highlight, RepoOverview, DependencyGraphData, RepoStats, AIConfig } from './types';
 import { parseRepoUrl, fetchRepoTree, fetchFileContent } from './services/github';
-import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples, summarizeFile } from './services/gemini';
+import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples, summarizeFile, setAIConfig } from './services/gemini';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -14,6 +14,7 @@ import { FlowVisualizer } from './components/FlowVisualizer';
 import { Dashboard } from './components/Dashboard';
 import { HomePage } from './components/HomePage';
 import { IndexingOverlay } from './components/IndexingOverlay';
+import { SettingsModal } from './components/SettingsModal';
 
 const FormattedText = ({ text, onFileClick }: { text: string; onFileClick?: (path: string) => void }) => {
   const components = {
@@ -61,6 +62,25 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingTime, setLoadingTime] = useState(0);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [aiConfig, setAiConfigState] = useState<AIConfig>(() => {
+    const saved = localStorage.getItem('ai_config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.useFlash === undefined) parsed.useFlash = true;
+        setAIConfig(parsed);
+        return parsed;
+      } catch (e) {}
+    }
+    return { provider: 'gemini', useFlash: true };
+  });
+
+  const handleSaveAIConfig = (config: AIConfig) => {
+    setAiConfigState(config);
+    setAIConfig(config);
+    localStorage.setItem('ai_config', JSON.stringify(config));
+  };
   const [indexingProgress, setIndexingProgress] = useState<{ current: number; total: number; stage: string } | null>(null);
   const [overview, setOverview] = useState<RepoOverview | null>(null);
   const [activeHighlights, setActiveHighlights] = useState<Highlight[]>([]);
@@ -71,7 +91,6 @@ export default function App() {
   const [dependencyData, setDependencyData] = useState<DependencyGraphData | null>(null);
   const [isGeneratingGraph, setIsGeneratingGraph] = useState(false);
   const [isScanningFile, setIsScanningFile] = useState(false);
-  const [useFlash, setUseFlash] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentSources, setCurrentSources] = useState<{ path: string; startLine: number; endLine: number }[]>([]);
   
@@ -550,10 +569,15 @@ export default function App() {
         selectedFile, 
         files.map(f => f.path), 
         overview, 
-        forceFlash || useFlash,
+        forceFlash || aiConfig.useFlash,
         snippets // Pass snippets as context
       );
-      const analysis = { ...rawAnalysis };
+      const analysis = { 
+        answer_markdown: rawAnalysis.answer_markdown || "No explanation provided.",
+        highlights: Array.isArray(rawAnalysis.highlights) ? rawAnalysis.highlights : [],
+        related: Array.isArray(rawAnalysis.related) ? rawAnalysis.related : [],
+        call_tree_markdown: rawAnalysis.call_tree_markdown
+      };
       
       // Refine highlights if they point to line 1 but have a name
       if (analysis.highlights.length > 0 && selectedFile) {
@@ -805,6 +829,7 @@ export default function App() {
         jwtToken={jwtToken}
         onConnectGitHub={handleConnectGitHub}
         onLogoutGitHub={handleLogoutGitHub}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
     );
   }
@@ -847,6 +872,13 @@ export default function App() {
             </button>
           </div>
         <div className="flex items-center gap-4 shrink-0">
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-blue-400 rounded-lg border border-slate-700 transition-all shadow-inner"
+            title="AI Settings"
+          >
+            <Settings size={16} />
+          </button>
           {githubUser ? (
             <div className="flex items-center gap-3">
               <div className="flex flex-col items-end">
@@ -1361,15 +1393,15 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button 
                   type="button"
-                  onClick={() => setUseFlash(!useFlash)}
+                  onClick={() => handleSaveAIConfig({ ...aiConfig, useFlash: !aiConfig.useFlash })}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] font-bold uppercase tracking-widest ${
-                    useFlash 
+                    aiConfig.useFlash 
                       ? "bg-blue-500/10 border-blue-500/30 text-blue-400" 
                       : "bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700"
                   }`}
                 >
-                  <Sparkles size={12} className={useFlash ? "animate-pulse" : ""} />
-                  {useFlash ? "Speed Mode (Flash)" : "Quality Mode (Pro)"}
+                  <Sparkles size={12} className={aiConfig.useFlash ? "animate-pulse" : ""} />
+                  {aiConfig.useFlash ? "Speed Mode (Flash)" : "Quality Mode (Pro)"}
                 </button>
               </div>
               {isLoading && (
@@ -1396,6 +1428,12 @@ export default function App() {
         repoName={repo ? `${repo.owner}/${repo.name}` : url} 
         loadingTime={loadingTime} 
         progress={indexingProgress}
+      />
+      <SettingsModal 
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleSaveAIConfig}
+        initialConfig={aiConfig}
       />
     </div>
   );

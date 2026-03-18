@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Github, Search, Activity, Calendar, ArrowRight, Trash2, RefreshCw, GitBranch, Sparkles, AlertTriangle, Clock, ShieldCheck } from 'lucide-react';
-import { RepoStats, RepoOverview } from '../types';
-import { embedText } from '../services/gemini';
+import { Github, Search, Activity, Calendar, ArrowRight, Trash2, RefreshCw, GitBranch, Sparkles, AlertTriangle, Clock, ShieldCheck, Settings } from 'lucide-react';
+import { RepoStats, RepoOverview, AIConfig } from '../types';
+import { embedText, setAIConfig } from '../services/gemini';
+import { SettingsModal } from './SettingsModal';
 
 interface IndexedRepo {
   owner: string;
@@ -22,9 +23,10 @@ interface HomePageProps {
   jwtToken: string | null;
   onConnectGitHub: () => void;
   onLogoutGitHub: () => void;
+  onOpenSettings: () => void;
 }
 
-export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jwtToken, onConnectGitHub, onLogoutGitHub }) => {
+export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jwtToken, onConnectGitHub, onLogoutGitHub, onOpenSettings }) => {
   console.log("HomePage Render - githubUser:", githubUser?.login || "null");
   const [repos, setRepos] = useState<IndexedRepo[]>([]);
   const [userRepos, setUserRepos] = useState<any[]>([]);
@@ -55,7 +57,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
         setDbError(healthData.lastError || `Database state: ${healthData.dbStateName}`);
       }
       
-      const res = await fetch('/api/repos');
+      const headers: Record<string, string> = {};
+      if (jwtToken) {
+        headers['Authorization'] = `Bearer ${jwtToken}`;
+      }
+      
+      const res = await fetch('/api/repos', { headers });
       const contentType = res.headers.get("content-type");
       
       if (res.ok && contentType && contentType.includes("application/json")) {
@@ -263,6 +270,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                 Vector Index Missing
               </div>
             )}
+            <button 
+              onClick={onOpenSettings}
+              className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-blue-400 hover:border-blue-500/30 transition-all"
+              title="AI Settings"
+            >
+              <Settings size={20} />
+            </button>
             <button 
               onClick={() => fetchRepos()}
               className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-blue-400 hover:border-blue-500/30 transition-all"

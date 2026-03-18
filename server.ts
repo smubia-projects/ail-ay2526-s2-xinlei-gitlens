@@ -315,19 +315,19 @@ async function startServer() {
       }
 
       // Filter logic:
-      // 1. Anonymous: Show ONLY explicit public repos (isPrivate: false)
-      // 2. Logged in: Show public repos OR repos owned by the user
+      // 1. Anonymous: Show ONLY public repos that are NOT owned by anyone (unowned/temporary)
+      // 2. Logged in: Show your own repos OR public repos that are NOT owned by anyone
       
       let query: any;
       if (req.user) {
         query = {
           $or: [
-            { isPrivate: false },
-            { githubUserId: req.user.id }
+            { githubUserId: req.user.id },
+            { githubUserId: { $exists: false }, isPrivate: false }
           ]
         };
       } else {
-        query = { isPrivate: false };
+        query = { githubUserId: { $exists: false }, isPrivate: false };
       }
 
       const repos = await RepoModel.find(query, { 
@@ -359,15 +359,16 @@ async function startServer() {
 
     try {
       // Filter logic: same as GET /api/repos
-      const filter: any = {
-        $or: [
-          { isPrivate: false },
-          { isPrivate: { $exists: false } }
-        ]
-      };
-
+      let filter: any;
       if (req.user) {
-        filter.$or.push({ githubUserId: req.user.id });
+        filter = {
+          $or: [
+            { githubUserId: req.user.id },
+            { githubUserId: { $exists: false }, isPrivate: false }
+          ]
+        };
+      } else {
+        filter = { githubUserId: { $exists: false }, isPrivate: false };
       }
 
       const results = await RepoModel.aggregate([
@@ -524,9 +525,17 @@ async function startServer() {
 
       // Privacy check before delete
       const repo = await RepoModel.findOne(query);
-      if (repo && repo.isPrivate) {
-        if (!req.user || repo.githubUserId !== req.user.id) {
-          return res.status(403).json({ error: "Cannot delete a private repository you do not own" });
+      if (repo) {
+        // If it has an owner, only the owner can delete it
+        if (repo.githubUserId) {
+          if (!req.user || repo.githubUserId !== req.user.id) {
+            return res.status(403).json({ error: "Cannot delete a repository owned by another user" });
+          }
+        } else if (repo.isPrivate) {
+          // If it's private but somehow has no owner (shouldn't happen), still restrict
+          if (!req.user) {
+            return res.status(403).json({ error: "Cannot delete a private repository anonymously" });
+          }
         }
       }
       

@@ -101,7 +101,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
       .style("fill", "rgba(255, 255, 255, 0.4)")
       .style("font-size", "9px")
       .style("pointer-events", "none")
-      .text(d => d.file.split('/').pop() || '');
+      .text(d => (d.file || '').split('/').pop() || '');
 
     simulation.on("tick", () => {
       link
@@ -216,7 +216,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2 text-blue-400">
                             <FileCode size={14} />
-                            <span className="text-[11px] font-bold mono truncate max-w-[150px]">{ex.file.split('/').pop()}</span>
+                            <span className="text-[11px] font-bold mono truncate max-w-[150px]">{(ex.file || '').split('/').pop()}</span>
                           </div>
                           <span className="text-[10px] mono text-slate-600 font-bold">L{ex.line}</span>
                         </div>
