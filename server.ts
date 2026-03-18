@@ -160,14 +160,22 @@ async function startServer() {
   // Auth Routes
   app.get("/api/auth/github/url", (req, res) => {
     const client_id = process.env.GITHUB_CLIENT_ID;
+    const app_name = process.env.GITHUB_APP_NAME || "gitlens-cursor"; // Fallback to a default or placeholder
+    
     if (!client_id) {
       return res.status(500).json({ error: "GITHUB_CLIENT_ID not configured" });
     }
-    // Use APP_URL from environment for reliable redirect URI
+    
     const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
     const redirect_uri = `${baseUrl}/api/auth/github/callback`;
-    const url = `https://github.com/login/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&scope=repo,user:email`;
-    res.json({ url });
+    
+    // Standard OAuth URL
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&scope=repo,user:email`;
+    
+    // Installation URL (The "Quick Way" to get repo access)
+    const installUrl = `https://github.com/apps/${app_name}/installations/new`;
+    
+    res.json({ authUrl, installUrl });
   });
 
   app.get("/api/auth/github/callback", async (req, res) => {
@@ -267,30 +275,83 @@ async function startServer() {
     res.json({ message: "Logged out" });
   });
 
+  app.get("/api/github/installations", async (req: any, res) => {
+    if (!req.githubToken) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const response = await axios.get("https://api.github.com/user/installations", {
+        headers: { 
+          Authorization: `token ${req.githubToken}`,
+          "User-Agent": "GitLens-Cursor-App",
+          "Accept": "application/vnd.github.v3+json"
+        }
+      });
+      res.json(response.data);
+    } catch (error: any) {
+      console.error("Failed to fetch installations:", error.response?.data || error.message);
+      res.status(500).json({ error: "Failed to fetch installations" });
+    }
+  });
+
   app.get("/api/github/user/repos", async (req: any, res) => {
     if (!req.githubToken) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
     try {
-      console.log(`Fetching repos for user with token starting with: ${req.githubToken?.substring(0, 10)}...`);
-      const response = await axios.get("https://api.github.com/user/repos", {
-        headers: { 
-          Authorization: `token ${req.githubToken}`,
-          "User-Agent": "GitLens-Cursor-App"
-        },
-        params: {
-          sort: 'updated',
-          per_page: 100,
-          visibility: 'all',
-          affiliation: 'owner,collaborator,organization_member'
+      console.log(`Fetching all repos for user with token starting with: ${req.githubToken?.substring(0, 10)}...`);
+      
+      let allRepos: any[] = [];
+      let page = 1;
+      let hasMore = true;
+
+      while (hasMore && page <= 10) { // Limit to 10 pages (1000 repos) to avoid timeouts
+        console.log(`Fetching page ${page}...`);
+        const response = await axios.get("https://api.github.com/user/repos", {
+          headers: { 
+            Authorization: `token ${req.githubToken}`,
+            "User-Agent": "GitLens-Cursor-App"
+          },
+          params: {
+            sort: 'updated',
+            per_page: 100,
+            page: page,
+            type: 'all'
+          }
+        });
+
+        // Log scopes for debugging
+        if (page === 1) {
+          console.log(`GitHub API Scopes: ${response.headers['x-oauth-scopes']}`);
+          console.log(`GitHub API Accepted Scopes: ${response.headers['x-accepted-oauth-scopes']}`);
         }
-      });
-      console.log(`GitHub returned ${response.data.length} repositories.`);
-      if (response.data.length > 0) {
-        console.log("First 5 repos:", response.data.slice(0, 5).map((r: any) => r.full_name).join(", "));
+
+        const repos = response.data;
+        if (repos.length > 0) {
+          allRepos = [...allRepos, ...repos];
+          
+          // Debug logging for visibility
+          const privateCount = repos.filter((r: any) => r.private).length;
+          const publicCount = repos.filter((r: any) => !r.private).length;
+          console.log(`Page ${page}: Found ${repos.length} repos (${publicCount} public, ${privateCount} private)`);
+          
+          if (repos.length < 100) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
       }
-      res.json(response.data);
+
+      console.log(`GitHub returned ${allRepos.length} repositories in total across ${page} pages.`);
+      if (allRepos.length > 0) {
+        console.log("First 5 repos:", allRepos.slice(0, 5).map((r: any) => r.full_name).join(", "));
+      }
+      res.json(allRepos);
     } catch (err: any) {
       const errorData = err.response?.data;
       const errorMessage = typeof errorData === 'object' ? JSON.stringify(errorData) : (errorData || err.message);
@@ -499,7 +560,7 @@ async function startServer() {
       const updatedRepo = await RepoModel.findOneAndUpdate(
         { owner, name, branch },
         updateData,
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
       return res.json(updatedRepo);
     } catch (err) {

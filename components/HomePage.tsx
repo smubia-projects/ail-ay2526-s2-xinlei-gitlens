@@ -24,9 +24,10 @@ interface HomePageProps {
   onConnectGitHub: () => void;
   onLogoutGitHub: () => void;
   onOpenSettings: () => void;
+  onInstallGitHub: () => void;
 }
 
-export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jwtToken, onConnectGitHub, onLogoutGitHub, onOpenSettings }) => {
+export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jwtToken, onConnectGitHub, onLogoutGitHub, onOpenSettings, onInstallGitHub }) => {
   console.log("HomePage Render - githubUser:", githubUser?.login || "null");
   const [repos, setRepos] = useState<IndexedRepo[]>([]);
   const [userRepos, setUserRepos] = useState<any[]>([]);
@@ -637,12 +638,30 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                 })}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-20 space-y-4">
-                <Github size={48} className="text-slate-800" />
-                <div className="text-center space-y-2">
-                  <p className="text-slate-500 font-medium">No repositories found in your GitHub account.</p>
-                  <p className="text-[10px] text-slate-600 max-w-xs mx-auto leading-relaxed">
-                    If you're looking for organization repos, make sure you've granted access to this app in your GitHub settings.
+              <div className="flex flex-col items-center justify-center py-20 space-y-6">
+                <div className="p-6 bg-slate-900/50 rounded-full border border-slate-800 text-slate-700">
+                  <Github size={64} />
+                </div>
+                <div className="text-center space-y-4 max-w-md">
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold text-white">No Repositories Found</h3>
+                    <p className="text-slate-500 text-sm leading-relaxed">
+                      You are connected to GitHub, but the app hasn't been granted access to any repositories yet. 
+                      You need to <strong>Install</strong> the app on your account or organization.
+                    </p>
+                  </div>
+                  
+                  <button 
+                    onClick={onInstallGitHub}
+                    className="inline-flex items-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold uppercase tracking-widest text-xs transition-all shadow-xl shadow-blue-500/20 group"
+                  >
+                    <Sparkles size={16} className="group-hover:rotate-12 transition-transform" />
+                    Grant Repository Access
+                  </button>
+
+                  <p className="text-[10px] text-slate-600 leading-relaxed">
+                    Clicking above will open GitHub where you can select which repositories this app can see. 
+                    You can choose "All repositories" or just specific ones.
                   </p>
                 </div>
               </div>

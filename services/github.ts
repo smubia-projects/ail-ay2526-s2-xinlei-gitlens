@@ -53,11 +53,11 @@ export const fetchRepoTree = async (repo: Repository, token?: string): Promise<R
       throw new Error(`Failed to fetch repo tree: ${response.status} ${response.statusText || ''}`);
     }
     const fallbackData = await fallbackResponse.json();
-    return fallbackData.tree as RepoFile[];
+    return (fallbackData.tree || []) as RepoFile[];
   }
 
   const data = await response.json();
-  return data.tree as RepoFile[];
+  return (data.tree || []) as RepoFile[];
 };
 
 export const fetchFileContent = async (repo: Repository, path: string, token?: string): Promise<string> => {

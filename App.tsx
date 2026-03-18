@@ -171,11 +171,23 @@ export default function App() {
     try {
       const res = await fetch('/api/auth/github/url');
       if (res.ok) {
-        const { url } = await res.json();
-        window.open(url, 'github_oauth', 'width=600,height=700');
+        const { authUrl } = await res.json();
+        window.open(authUrl, 'github_oauth', 'width=600,height=700');
       }
     } catch (e) {
       console.error("Failed to get auth URL", e);
+    }
+  };
+
+  const handleInstallGitHub = async () => {
+    try {
+      const res = await fetch('/api/auth/github/url');
+      if (res.ok) {
+        const { installUrl } = await res.json();
+        window.open(installUrl, 'github_install', 'width=800,height=800');
+      }
+    } catch (e) {
+      console.error("Failed to get install URL", e);
     }
   };
 
@@ -289,12 +301,19 @@ export default function App() {
       let initialHighlights: any[] = [];
       if (repoMap.entry_points && repoMap.entry_points.length > 0) {
         const topEntry = repoMap.entry_points[0].path;
-        try {
-          const entryContent = await fetchFileContent(parsed, topEntry, githubToken || undefined);
-          initialHighlights = await analyzeFileSymbols(topEntry, entryContent);
-          setActiveHighlights(initialHighlights);
-        } catch (e) {
-          console.warn("Failed to scan entry point", e);
+        // Verify the file actually exists in our tree to avoid 404
+        const exists = tree.some(f => f.path === topEntry);
+        
+        if (exists) {
+          try {
+            const entryContent = await fetchFileContent(parsed, topEntry, githubToken || undefined);
+            initialHighlights = await analyzeFileSymbols(topEntry, entryContent);
+            setActiveHighlights(initialHighlights);
+          } catch (e) {
+            console.warn("Failed to scan entry point", e);
+          }
+        } else {
+          console.warn(`Entry point ${topEntry} not found in repository tree.`);
         }
       }
 
@@ -302,7 +321,10 @@ export default function App() {
       setIndexingProgress({ current: 50, total: 100, stage: 'Generating Semantic Vector' });
       let vector: number[] = [];
       try {
-        const embeddingText = `${repoMap.summary} ${repoMap.architecture_type} ${repoMap.core_modules.map(m => m.description).join(' ')}`;
+        const summary = repoMap.summary || '';
+        const arch = repoMap.architecture_type || '';
+        const modules = (repoMap.core_modules || []).map(m => m.description || '').join(' ');
+        const embeddingText = `${summary} ${arch} ${modules}`;
         vector = await embedText(embeddingText);
       } catch (e) {
         console.warn("Failed to generate embedding", e);
@@ -823,14 +845,29 @@ export default function App() {
 
   if (view === 'home') {
     return (
-      <HomePage 
-        onSelectRepo={handleSelectRepoFromHome} 
-        githubUser={githubUser}
-        jwtToken={jwtToken}
-        onConnectGitHub={handleConnectGitHub}
-        onLogoutGitHub={handleLogoutGitHub}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-      />
+      <>
+        <HomePage 
+          onSelectRepo={handleSelectRepoFromHome} 
+          githubUser={githubUser}
+          jwtToken={jwtToken}
+          onConnectGitHub={handleConnectGitHub}
+          onLogoutGitHub={handleLogoutGitHub}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onInstallGitHub={handleInstallGitHub}
+        />
+        <IndexingOverlay 
+          isVisible={isIndexing} 
+          repoName={repo ? `${repo.owner}/${repo.name}` : url} 
+          loadingTime={loadingTime} 
+          progress={indexingProgress}
+        />
+        <SettingsModal 
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          onSave={handleSaveAIConfig}
+          initialConfig={aiConfig}
+        />
+      </>
     );
   }
 
@@ -1149,7 +1186,7 @@ export default function App() {
                           <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
                             <div className="text-[10px] text-emerald-500 uppercase font-black mb-3 flex items-center gap-2 tracking-widest"><Activity size={14} /> Contextual Examples</div>
                             <div className="space-y-3">
-                              {focusedFunction.usage_examples.slice(0, 3).map((ex, i) => (
+                              {(focusedFunction.usage_examples || []).slice(0, 3).map((ex, i) => (
                                 <div key={i} className="p-3 rounded-xl bg-slate-900/50 border border-slate-800/50 hover:border-blue-500/30 transition-all group cursor-pointer"
                                   onClick={() => handleNavigate(ex.file, ex.line)}
                                 >
@@ -1163,12 +1200,12 @@ export default function App() {
                                   <p className="text-[10px] text-slate-500 leading-relaxed italic">{ex.context_explanation}</p>
                                 </div>
                               ))}
-                              {focusedFunction.usage_examples.length > 3 && (
+                              {(focusedFunction.usage_examples || []).length > 3 && (
                                 <button 
                                   onClick={() => setActiveTab('logic')}
                                   className="w-full py-2 text-[9px] font-bold text-slate-600 hover:text-blue-400 uppercase tracking-widest transition-colors"
                                 >
-                                  + {focusedFunction.usage_examples.length - 3} more in Logic Flow
+                                  + {(focusedFunction.usage_examples || []).length - 3} more in Logic Flow
                                 </button>
                               )}
                             </div>
@@ -1254,7 +1291,7 @@ export default function App() {
                 <div className="space-y-3">
                   <div className="text-[10px] font-bold text-slate-600 uppercase pl-1 tracking-[0.2em]">Entry Points</div>
                   <div className="grid grid-cols-1 gap-2">
-                    {overview.entry_points.map((ep, i) => (
+                    {(overview.entry_points || []).map((ep, i) => (
                       <button key={i} onClick={() => handleNavigate(ep.path)}
                         className="w-full flex items-start gap-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-900 transition-all text-left group shadow-sm"
                       >
@@ -1270,7 +1307,7 @@ export default function App() {
                 <div className="space-y-3">
                   <div className="text-[10px] font-bold text-slate-600 uppercase pl-1 tracking-[0.2em]">Core Modules</div>
                   <div className="grid grid-cols-1 gap-2">
-                    {overview.core_modules.map((cm, i) => (
+                    {(overview.core_modules || []).map((cm, i) => (
                       <button key={i} onClick={() => handleModuleClick(cm.folder, cm.description)}
                         className="w-full p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-900 transition-all text-left group shadow-sm"
                       >
@@ -1340,7 +1377,7 @@ export default function App() {
                               </div>
                             </div>
                           )}
-                          {m.analysis.highlights.length > 0 && (
+                          {m.analysis.highlights && m.analysis.highlights.length > 0 && (
                             <div className="flex flex-col gap-2">
                               <div className="text-[10px] font-bold text-slate-600 uppercase pl-2 tracking-[0.2em] mb-1">Identified Focus</div>
                               <div className="grid grid-cols-1 gap-2">

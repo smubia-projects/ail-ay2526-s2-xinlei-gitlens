@@ -213,7 +213,19 @@ export const getRepoOverview = async (fileList: string[], context?: string): Pro
       },
     });
     const jsonStr = response.text?.trim() || '{}';
-    return JSON.parse(jsonStr) as RepoOverview;
+    const parsed = JSON.parse(jsonStr);
+    return {
+      summary: typeof parsed.summary === 'string' ? parsed.summary : "No summary available.",
+      entry_points: Array.isArray(parsed.entry_points) ? parsed.entry_points.map((ep: any) => ({
+        path: typeof ep.path === 'string' ? ep.path : 'unknown',
+        purpose: typeof ep.purpose === 'string' ? ep.purpose : 'No purpose provided.'
+      })) : [],
+      core_modules: Array.isArray(parsed.core_modules) ? parsed.core_modules.map((cm: any) => ({
+        folder: typeof cm.folder === 'string' ? cm.folder : 'unknown',
+        description: typeof cm.description === 'string' ? cm.description : 'No description available.'
+      })) : [],
+      architecture_type: typeof parsed.architecture_type === 'string' ? parsed.architecture_type : "Unknown"
+    } as RepoOverview;
   } finally {
     console.timeEnd("getRepoOverview");
   }
@@ -327,20 +339,32 @@ export const analyzeCode = async (
       if (result.highlights) {
         result.highlights = result.highlights.map(h => ({
           ...h,
+          file: typeof h.file === 'string' ? h.file : 'unknown',
           start: sanitizeLine(h.start),
-          end: sanitizeLine(h.end)
+          end: sanitizeLine(h.end),
+          usage_examples: Array.isArray(h.usage_examples) ? h.usage_examples.map(ex => ({
+            ...ex,
+            file: typeof ex.file === 'string' ? ex.file : 'unknown',
+            line: sanitizeLine(ex.line)
+          })) : []
         }));
       }
 
       if (result.related) {
         result.related = result.related.map(r => ({
           ...r,
+          file: typeof r.file === 'string' ? r.file : 'unknown',
           start: sanitizeLine(r.start),
           end: sanitizeLine(r.end)
         }));
       }
 
-      return result;
+      return {
+        answer_markdown: result.answer_markdown || "No explanation available.",
+        highlights: result.highlights || [],
+        related: result.related || [],
+        call_tree_markdown: result.call_tree_markdown || ""
+      };
     } catch (e) {
       console.error("Failed to parse Gemini response as JSON:", jsonStr);
       // If parsing fails, don't just dump the raw JSON into the answer
@@ -349,7 +373,8 @@ export const analyzeCode = async (
       return {
         answer_markdown: jsonStr.length > 500 ? fallbackMessage : (jsonStr || fallbackMessage),
         highlights: [],
-        related: []
+        related: [],
+        call_tree_markdown: ""
       };
     }
   } catch (err: any) {

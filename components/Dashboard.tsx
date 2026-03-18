@@ -70,9 +70,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, overview, repoName,
           {/* Language Distribution */}
           <div className="lg:col-span-1 bg-slate-900/50 border border-slate-800 p-8 rounded-[2rem] flex flex-col items-center">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] mb-8 self-start">Language Mix</h3>
-            <div className="w-full h-[200px] flex items-center justify-center min-w-0 min-h-0">
+            <div className="w-full h-[200px] flex items-center justify-center min-w-0 min-h-0 relative">
               {isMounted && stats.languages.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={stats.languages}
@@ -80,6 +80,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, overview, repoName,
                       outerRadius={80}
                       paddingAngle={5}
                       dataKey="count"
+                      isAnimationActive={false} // Disable animation to avoid initial size issues
                     >
                       {stats.languages.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
@@ -129,7 +130,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, overview, repoName,
                 <div>
                   <h4 className="text-sm font-bold text-white mb-1">Entry Points</h4>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {overview?.entry_points.map((ep, i) => (
+                    {(overview?.entry_points || []).map((ep, i) => (
                       <div key={i} className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-full text-[10px] text-slate-300 mono">
                         {ep.path}
                       </div>
@@ -145,7 +146,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, overview, repoName,
         <div className="bg-slate-900/50 border border-slate-800 p-8 rounded-[2rem]">
            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] mb-6">Core Modules</h3>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             {overview?.core_modules.map((mod, i) => (
+             {(overview?.core_modules || []).map((mod, i) => (
                <div key={i} className="p-4 bg-slate-950/50 border border-slate-800 rounded-2xl hover:border-blue-500/30 transition-colors">
                  <div className="text-blue-400 font-bold text-sm mono mb-1">/{mod.folder}</div>
                  <div className="text-xs text-slate-500 leading-relaxed">{mod.description}</div>
