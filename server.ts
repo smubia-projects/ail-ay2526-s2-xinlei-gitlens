@@ -5,6 +5,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import axios from "axios";
+import path from "path";
 
 import { RepoModel } from "./models/Repo.js";
 import { SnippetModel } from "./models/Snippet.js";
@@ -807,7 +808,14 @@ async function startServer() {
 
   // Vite middleware for development
   console.log("Checking NODE_ENV for Vite middleware...");
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV === "production") {
+    console.log("Serving static files from dist...");
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
     console.log("Initializing Vite middleware...");
     try {
       console.log("Creating Vite server...");
@@ -825,9 +833,6 @@ async function startServer() {
     } catch (viteError) {
       console.error("Vite initialization failed:", viteError);
     }
-  } else {
-    console.log("Serving static files from dist...");
-    app.use(express.static("dist"));
   }
 
   console.log(`Starting Express server on port ${PORT}...`);
