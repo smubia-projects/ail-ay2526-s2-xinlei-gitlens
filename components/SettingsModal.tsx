@@ -183,10 +183,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
             </div>
           )}
 
-          <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl flex gap-3">
-            <AlertCircle className="text-amber-500 shrink-0" size={18} />
-            <p className="text-[10px] text-amber-500/80 leading-relaxed font-bold uppercase tracking-wider">
-              Settings are stored locally in your browser. Ensure your API key is valid for the selected provider.
+          <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl flex gap-3">
+            <CheckCircle2 className="text-blue-500 shrink-0" size={18} />
+            <p className="text-[10px] text-blue-400 leading-relaxed font-bold uppercase tracking-wider">
+              Settings are synced with your GitHub account when logged in.
             </p>
           </div>
         </div>

@@ -11,7 +11,7 @@ GitLens Cursor AI Code Visualizer combines high-performance repository explorati
 ### 🔍 AI-Powered Exploration
 - **Semantic Search (RAG)**: Automatically chunks and embeds code using `gemini-embedding-001`. Relevant snippets are retrieved using MongoDB Atlas Vector Search to provide the AI with precise context.
 - **Deep Code Analysis**: Uses Gemini 3.1 Pro for complex reasoning and **Gemini 3 Flash** for high-speed interactions.
-- **Resilient AI Layer**: Built-in timeout handling (45s), exponential backoff for 503 errors, and automatic response sanitization to prevent hallucinated line numbers.
+- **Resilient AI Layer**: Built-in timeout handling (45s), exponential backoff for 503 errors, and automatic response sanitization.
 - **Symbol Analysis**: Automatically identifies functions, classes, and variables with line-accurate explanations and parameter details.
 
 ### 📊 Visualization & Tracing
@@ -24,6 +24,8 @@ GitLens Cursor AI Code Visualizer combines high-performance repository explorati
 - **Source Navigation**: Click on AI-retrieved context to jump directly to the relevant line in the code viewer.
 - **Speed Mode**: Toggle between high-reasoning (Pro) and high-speed (Flash) models.
 - **Modern UI**: Responsive, high-performance interface built with React, Tailwind CSS, and Framer Motion.
+- **Auto-Scrolling Chat**: Chat interface automatically scrolls to the latest response.
+- **Instant Flow Visualization**: Logic flow diagrams render instantly without slow animations.
 
 ## 🛠️ Tech Stack
 
@@ -43,16 +45,27 @@ GitLens Cursor AI Code Visualizer combines high-performance repository explorati
 
 ## 🚦 Getting Started
 
-1. **Environment Setup**:
-   - Ensure `GEMINI_API_KEY` is set in your environment (Get one at [Google AI Studio](https://aistudio.google.com/app/apikey)).
-   - *Note: Ensure you use a Gemini API key, not a Google Maps API key (which starts with `MapAPI`).*
-   - Configure `MONGODB_URI` for the vector search index.
-2. **Indexing**:
-   - Enter a GitHub URL.
-   - The app will automatically clone, chunk, and index the repository for semantic search.
-3. **Analyze**:
-   - Use the chat interface to ask questions about the code.
-   - Use the "Visualize" and "Trace" tools to explore the structure.
+1. **Prerequisites**:
+   - Node.js (v18+)
+   - MongoDB Atlas account with a Vector Search index configured.
+2. **Installation**:
+   ```bash
+   npm install
+   ```
+3. **Environment Setup**:
+   - Copy `.env.example` to `.env` and configure the required variables:
+     - `GEMINI_API_KEY`: Get one at [Google AI Studio](https://aistudio.google.com/app/apikey).
+     - `MONGODB_URI`: Connection string for your MongoDB Atlas instance.
+4. **Run Development Server**:
+   ```bash
+   npm run dev
+   ```
+
+## 🔧 Troubleshooting
+
+### MongoDB Vector Index Errors
+If you encounter `MongoServerError: PlanExecutor error... vector field is indexed with X dimensions but queried with Y dimensions`, ensure your embedding model configuration matches your MongoDB Atlas vector index dimensions.
+- **Fix**: Update the `dimensions` parameter in your embedding service (e.g., `services/gemini.ts`) to match the index configuration (e.g., `768`).
 
 ---
 *Built with ❤️ for developers who want to see the big picture.*

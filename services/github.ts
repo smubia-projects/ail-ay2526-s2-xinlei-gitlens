@@ -6,11 +6,17 @@ export const parseRepoUrl = (url: string): Repository | null => {
     const cleanUrl = url.replace(/\/$/, '');
     const parts = cleanUrl.split('/');
     if (parts.length < 5) return null;
-    return {
-      owner: parts[3],
-      name: parts[4],
-      branch: 'main'
-    };
+    
+    const owner = parts[3];
+    const name = parts[4];
+    let branch = 'main';
+    
+    // Handle https://github.com/owner/repo/tree/branch
+    if (parts.length >= 7 && parts[5] === 'tree') {
+      branch = parts[6];
+    }
+    
+    return { owner, name, branch };
   } catch {
     return null;
   }

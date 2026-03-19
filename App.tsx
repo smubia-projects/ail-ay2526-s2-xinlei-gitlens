@@ -46,7 +46,7 @@ const FormattedText = ({ text, onFileClick }: { text: string; onFileClick?: (pat
   return (
     <div className="markdown-body prose prose-invert prose-slate max-w-none text-[14px]">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {text}
+        {typeof text === 'string' ? text : JSON.stringify(text, null, 2)}
       </ReactMarkdown>
     </div>
   );
@@ -76,10 +76,68 @@ export default function App() {
     return { provider: 'gemini', useFlash: true };
   });
 
-  const handleSaveAIConfig = (config: AIConfig) => {
+  const [jwtToken, setJwtToken] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<RepoFile[]>([]);
+  const [showFileSuggestions, setShowFileSuggestions] = useState(false);
+  const [fileSuggestions, setFileSuggestions] = useState<RepoFile[]>([]);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const getJwtToken = () => {
+    return jwtToken || localStorage.getItem('gitlens_token');
+  };
+
+  const handleAttachFile = async (path: string) => {
+    const file = files.find(f => f.path === path);
+    if (file && !attachedFiles.some(af => af.path === path)) {
+      try {
+        const content = await fetchFileContent(repo!, path, githubToken || undefined);
+        setAttachedFiles(prev => [...prev, { ...file, content }]);
+      } catch (e) {
+        console.error("Failed to fetch content for attached file:", e);
+      }
+    }
+  };
+
+  const handleRemoveFile = (path: string) => {
+    setAttachedFiles(prev => prev.filter(af => af.path !== path));
+  };
+
+  const handleSaveAIConfig = async (config: AIConfig, tokenOverride?: string) => {
     setAiConfigState(config);
     setAIConfig(config);
     localStorage.setItem('ai_config', JSON.stringify(config));
+    
+    const token = tokenOverride || getJwtToken();
+    if (token) {
+      try {
+        console.log("Saving AI config to server...");
+        const res = await fetch('/api/user/config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(config)
+        });
+        if (res.ok) {
+          console.log("AI config saved to server successfully");
+        } else {
+          console.error("Failed to save AI config to server:", res.status);
+        }
+      } catch (e) {
+        console.error("Failed to save user config to server:", e);
+      }
+    } else {
+      console.log("No JWT token found, skipping server save for AI config");
+    }
   };
   const [indexingProgress, setIndexingProgress] = useState<{ current: number; total: number; stage: string } | null>(null);
   const [overview, setOverview] = useState<RepoOverview | null>(null);
@@ -101,7 +159,6 @@ export default function App() {
   const [stats, setStats] = useState<RepoStats | null>(null);
   const [githubUser, setGithubUser] = useState<any>(null);
   const [githubToken, setGithubToken] = useState<string | null>(null);
-  const [jwtToken, setJwtToken] = useState<string | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
@@ -150,6 +207,9 @@ export default function App() {
         setGithubUser(data.user);
         setGithubToken(data.token);
         setJwtToken(activeToken);
+        
+        // Fetch user config from server
+        fetchUserConfig(activeToken);
       } else {
         console.log("Auth check failed (Not authenticated)");
         localStorage.removeItem('gitlens_token');
@@ -164,6 +224,51 @@ export default function App() {
       setJwtToken(null);
     } finally {
       setIsCheckingAuth(false);
+    }
+  };
+
+  const fetchUserConfig = async (token: string) => {
+    try {
+      console.log("Fetching user AI config from server...");
+      const res = await fetch('/api/user/config', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const config = await res.json();
+        console.log("Server AI config response:", config);
+        if (config && Object.keys(config).length > 0 && config.apiKey) {
+          // Server has config, update local
+          console.log("Applying server AI config to local state");
+          setAiConfigState(config);
+          setAIConfig(config);
+          localStorage.setItem('ai_config', JSON.stringify(config));
+        } else {
+          // Server has no config, push local if it has an API key
+          console.log("Server has no AI config, checking local storage...");
+          const localSaved = localStorage.getItem('ai_config');
+          if (localSaved) {
+            try {
+              const localConfig = JSON.parse(localSaved);
+              if (localConfig.apiKey) {
+                console.log("Pushing local AI config to server...");
+                handleSaveAIConfig(localConfig, token);
+              } else {
+                console.log("Local AI config has no API key, skipping push");
+              }
+            } catch (e) {
+              console.error("Failed to parse local AI config:", e);
+            }
+          } else {
+            console.log("No local AI config found to push");
+          }
+        }
+      } else {
+        console.error("Failed to fetch user config from server, status:", res.status);
+      }
+    } catch (e) {
+      console.error("Failed to fetch user config:", e);
     }
   };
 
@@ -246,7 +351,12 @@ export default function App() {
       if (!forceRefresh) {
         try {
           console.time("fetchCache");
-          const cacheRes = await fetch(`/api/repo?owner=${parsed.owner}&name=${parsed.name}&branch=${parsed.branch}`);
+          const headers: Record<string, string> = {};
+          const activeToken = getJwtToken();
+          if (activeToken) {
+            headers['Authorization'] = `Bearer ${activeToken}`;
+          }
+          const cacheRes = await fetch(`/api/repo?owner=${parsed.owner}&name=${parsed.name}&branch=${parsed.branch}`, { headers });
           const contentType = cacheRes.headers.get("content-type");
           
           if (cacheRes.ok && contentType && contentType.includes("application/json")) {
@@ -360,8 +470,9 @@ export default function App() {
       setIndexingProgress({ current: 60, total: 100, stage: 'Saving to Cache' });
       try {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (jwtToken) {
-          headers['Authorization'] = `Bearer ${jwtToken}`;
+        const activeToken = getJwtToken();
+        if (activeToken) {
+          headers['Authorization'] = `Bearer ${activeToken}`;
         }
 
         const saveRes = await fetch('/api/repo', {
@@ -465,8 +576,9 @@ export default function App() {
           if (allSnippets.length > 0) {
           setIndexingProgress(prev => prev ? { ...prev, stage: 'Saving Index' } : null);
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (jwtToken) {
-            headers['Authorization'] = `Bearer ${jwtToken}`;
+          const activeToken = getJwtToken();
+          if (activeToken) {
+            headers['Authorization'] = `Bearer ${activeToken}`;
           }
 
           await fetch('/api/repo/index-snippets', {
@@ -563,9 +675,14 @@ export default function App() {
         try {
           const queryVector = await embedText(userQuery);
           if (queryVector.length > 0) {
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            const activeToken = getJwtToken();
+            if (activeToken) {
+              headers['Authorization'] = `Bearer ${activeToken}`;
+            }
             const searchRes = await fetch('/api/search/snippets', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers,
               body: JSON.stringify({
                 vector: queryVector,
                 owner: repo.owner,
@@ -592,7 +709,8 @@ export default function App() {
         files.map(f => f.path), 
         overview, 
         forceFlash || aiConfig.useFlash,
-        snippets // Pass snippets as context
+        snippets,
+        attachedFiles.map(f => ({ path: f.path, content: f.content || '' }))
       );
       const analysis = { 
         answer_markdown: rawAnalysis.answer_markdown || "No explanation provided.",
@@ -659,9 +777,75 @@ export default function App() {
     if (!query.trim() || !repo) return;
     const userQuery = query;
     setQuery('');
-    setMessages(prev => [...prev, { role: 'user', content: userQuery }]);
+    setMessages(prev => [...prev, { 
+      role: 'user', 
+      content: userQuery,
+      sources: attachedFiles.length > 0 ? attachedFiles.map(f => ({ path: f.path, startLine: 1, endLine: 1 })) : undefined
+    }]);
     setFocusedFunction(null);
     await runAnalysis(userQuery);
+    setAttachedFiles([]); // Clear after sending
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setQuery(val);
+
+    const lastAtPos = val.lastIndexOf('@');
+    if (lastAtPos !== -1 && (lastAtPos === 0 || val[lastAtPos - 1] === ' ')) {
+      const search = val.slice(lastAtPos + 1).toLowerCase();
+      const filtered = files.filter(f => f.type === 'blob' && f.path.toLowerCase().includes(search)).slice(0, 10);
+      if (filtered.length > 0) {
+        setFileSuggestions(filtered);
+        setShowFileSuggestions(true);
+        setSuggestionIndex(0);
+      } else {
+        setShowFileSuggestions(false);
+      }
+    } else {
+      setShowFileSuggestions(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showFileSuggestions) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSuggestionIndex(prev => (prev + 1) % fileSuggestions.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSuggestionIndex(prev => (prev - 1 + fileSuggestions.length) % fileSuggestions.length);
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const selected = fileSuggestions[suggestionIndex];
+        const lastAtPos = query.lastIndexOf('@');
+        const newVal = query.slice(0, lastAtPos) + `@${selected.path.split('/').pop()} `;
+        setQuery(newVal);
+        handleAttachFile(selected.path);
+        setShowFileSuggestions(false);
+      } else if (e.key === 'Escape') {
+        setShowFileSuggestions(false);
+      }
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const path = e.dataTransfer.getData('text/plain');
+    if (path) {
+      handleAttachFile(path);
+      setSidebarTab('chat');
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
   };
 
   const handleNavigate = (path: string, line?: number, highlight?: Highlight) => {
@@ -748,7 +932,12 @@ export default function App() {
       const flowPromise = selectedFile ? getFunctionFlow(symbolName, selectedFile.content) : Promise.resolve("");
 
       // 3. Find actual usages in the codebase
-      const searchResPromise = repo ? fetch(`/api/search/usages?symbol=${encodeURIComponent(symbolName)}&owner=${repo.owner}&name=${repo.name}`) : Promise.resolve(new Response(JSON.stringify([])));
+      const headers: Record<string, string> = {};
+      const activeToken = getJwtToken();
+      if (activeToken) {
+        headers['Authorization'] = `Bearer ${activeToken}`;
+      }
+      const searchResPromise = repo ? fetch(`/api/search/usages?symbol=${encodeURIComponent(symbolName)}&owner=${repo.owner}&name=${repo.name}`, { headers }) : Promise.resolve(new Response(JSON.stringify([])));
 
       const [data, flow, searchRes] = await Promise.all([dataPromise, flowPromise, searchResPromise]);
       data.call_flow_markdown = flow;
@@ -803,11 +992,18 @@ export default function App() {
     if (!selectedFile) return;
     setIsScanningFile(true);
     try {
-      const newHighlights = await analyzeFileSymbols(selectedFile.path, selectedFile.content);
+      console.log(`[AI] Scanning file: ${selectedFile.path}`);
+      const rawHighlights = await analyzeFileSymbols(selectedFile.path, selectedFile.content);
+      const newHighlights = refineHighlights(rawHighlights, selectedFile.content);
+      
+      console.log(`[AI] New highlights for ${selectedFile.path}:`, newHighlights);
+      
       // Merge with existing highlights for this file
       setActiveHighlights(prev => {
         const others = prev.filter(h => h.file !== selectedFile.path);
-        return [...others, ...newHighlights];
+        const merged = [...others, ...newHighlights];
+        console.log(`[AI] Total active highlights:`, merged.length);
+        return merged;
       });
       // Scroll to top to show the new symbols
       scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -830,7 +1026,7 @@ export default function App() {
       setUrl('');
       return;
     }
-    const targetUrl = `https://github.com/${owner}/${name}`;
+    const targetUrl = `https://github.com/${owner}/${name}${branch ? `/tree/${branch}` : ''}`;
     handleFetchRepo(false, targetUrl);
   };
 
@@ -1227,50 +1423,56 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
-                    {selectedFile && activeHighlights.filter(h => h.file === selectedFile.path).length > 0 ? (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between px-2 mb-1">
-                          <div className="text-[10px] font-bold text-blue-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                            <Sparkles size={12} /> Identified Focus
+                    {(() => {
+                      const filtered = selectedFile ? activeHighlights.filter(h => h.file === selectedFile.path) : [];
+                      if (selectedFile) {
+                        console.log(`[FOCUS] Rendering for ${selectedFile.path}. Found ${filtered.length} symbols. Total active: ${activeHighlights.length}`);
+                      }
+                      return filtered.length > 0 ? (
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between px-2 mb-1">
+                            <div className="text-[10px] font-bold text-blue-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                              <Sparkles size={12} /> Identified Focus
+                            </div>
                           </div>
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                          {activeHighlights.filter(h => h.file === selectedFile.path).map((h, idx) => (
-                            <div key={idx} onClick={() => handleNavigate(h.file, h.start, h)}
-                              className={`flex items-center justify-between p-4 border rounded-2xl transition-all text-left group shadow-sm cursor-pointer ${focusedFunction === h ? 'bg-blue-600/10 border-blue-500 shadow-blue-500/10' : 'bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800/80'}`}
-                            >
-                              <div className="flex flex-col overflow-hidden">
-                                <span className="text-[13px] font-bold text-slate-100 mono group-hover:text-blue-300 transition-colors truncate">{h.function_name || h.label}</span>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-[10px] bg-slate-800 text-blue-400 px-1.5 py-0.5 rounded border border-slate-700 font-mono font-bold">L{h.start}</span>
-                                  {h.params && <span className="text-[9px] text-slate-500 truncate max-w-[150px] italic">({h.params})</span>}
+                          <div className="grid grid-cols-1 gap-2">
+                            {filtered.map((h, idx) => (
+                              <div key={idx} onClick={() => handleNavigate(h.file, h.start, h)}
+                                className={`flex items-center justify-between p-4 border rounded-2xl transition-all text-left group shadow-sm cursor-pointer ${focusedFunction === h ? 'bg-blue-600/10 border-blue-500 shadow-blue-500/10' : 'bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800/80'}`}
+                              >
+                                <div className="flex flex-col overflow-hidden">
+                                  <span className="text-[13px] font-bold text-slate-100 mono group-hover:text-blue-300 transition-colors truncate">{h.function_name || h.label}</span>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-[10px] bg-slate-800 text-blue-400 px-1.5 py-0.5 rounded border border-slate-700 font-mono font-bold">L{h.start}</span>
+                                    {h.params && <span className="text-[9px] text-slate-500 truncate max-w-[150px] italic">({h.params})</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleVisualizeDependencies(h);
+                                    }}
+                                    className="p-2 bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white rounded-lg transition-all border border-slate-700 shadow-inner"
+                                    title="Visualize Dependencies"
+                                  >
+                                    {isGeneratingGraph ? <Loader2 size={14} className="animate-spin" /> : <Network size={14} />}
+                                  </button>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleVisualizeDependencies(h);
-                                  }}
-                                  className="p-2 bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white rounded-lg transition-all border border-slate-700 shadow-inner"
-                                  title="Visualize Dependencies"
-                                >
-                                  {isGeneratingGraph ? <Loader2 size={14} className="animate-spin" /> : <Network size={14} />}
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="h-64 flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50">
-                        <Code2 size={48} />
-                        <div className="text-center">
-                          <p className="text-sm font-medium">No symbols identified</p>
-                          <p className="text-[11px]">Click "Scan Symbols" in the editor to analyze this file</p>
+                      ) : (
+                        <div className="h-64 flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50">
+                          <Code2 size={48} />
+                          <div className="text-center">
+                            <p className="text-sm font-medium">No symbols identified</p>
+                            <p className="text-[11px]">Click "Scan Symbols" in the editor to analyze this file</p>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -1323,7 +1525,7 @@ export default function App() {
             )}
 
             {sidebarTab === 'chat' && (
-              <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+              <div className="flex flex-col gap-6 animate-in fade-in duration-300 overflow-y-auto h-full" ref={messagesContainerRef}>
                 {isLoading && currentSources.length > 0 && (
                   <div className="flex items-center gap-2 text-[10px] text-emerald-500 font-bold uppercase tracking-widest animate-pulse px-2">
                     <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
@@ -1425,7 +1627,24 @@ export default function App() {
             )}
           </div>
 
-          <div className="p-4 border-t border-slate-800 bg-slate-950 shadow-[0_-10px_20px_rgba(0,0,0,0.5)] shrink-0">
+          <div className={`p-4 border-t border-slate-800 bg-slate-950 shadow-[0_-10px_20px_rgba(0,0,0,0.5)] shrink-0 transition-all ${isDragging ? 'bg-blue-900/20 ring-2 ring-blue-500 ring-inset' : ''}`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            {attachedFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {attachedFiles.map(f => (
+                  <div key={f.path} className="flex items-center gap-2 px-2 py-1 bg-blue-500/10 border border-blue-500/30 rounded-lg text-[10px] text-blue-400 font-bold animate-in zoom-in-95">
+                    <FileCode size={12} />
+                    <span className="truncate max-w-[120px]">{f.path.split('/').pop()}</span>
+                    <button onClick={() => handleRemoveFile(f.path)} className="hover:text-white transition-colors">
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex items-center justify-between mb-3 px-1">
               <div className="flex items-center gap-2">
                 <button 
@@ -1449,9 +1668,39 @@ export default function App() {
               )}
             </div>
             <form onSubmit={handleQuery} className="relative group">
-              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
-                placeholder="Ask about logic implementation..."
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3.5 pl-5 pr-12 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-slate-600"
+              {showFileSuggestions && (
+                <div className="absolute bottom-full left-0 w-full mb-2 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in slide-in-from-bottom-2">
+                  <div className="p-2 border-b border-slate-800 text-[9px] font-black text-slate-500 uppercase tracking-widest">Files</div>
+                  <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                    {fileSuggestions.map((f, i) => (
+                      <div 
+                        key={f.path}
+                        onClick={() => {
+                          const lastAtPos = query.lastIndexOf('@');
+                          const newVal = query.slice(0, lastAtPos) + `@${f.path.split('/').pop()} `;
+                          setQuery(newVal);
+                          handleAttachFile(f.path);
+                          setShowFileSuggestions(false);
+                        }}
+                        className={`px-4 py-2 text-xs cursor-pointer flex items-center gap-3 transition-colors ${i === suggestionIndex ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                      >
+                        <FileCode size={14} />
+                        <div className="flex flex-col">
+                          <span className="font-bold">{f.path.split('/').pop()}</span>
+                          <span className={`text-[10px] opacity-60 ${i === suggestionIndex ? 'text-blue-100' : 'text-slate-500'}`}>{f.path}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <input 
+                type="text" 
+                value={query} 
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={isDragging ? "Drop file to attach..." : "Ask about logic or use @ to mention files..."}
+                className={`w-full bg-slate-900 border border-slate-800 rounded-xl py-3.5 pl-5 pr-12 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-slate-600 ${isDragging ? 'placeholder:text-blue-400' : ''}`}
               />
               <button type="submit" disabled={isLoading} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition-all disabled:opacity-30">
                 <ChevronRight size={20} />

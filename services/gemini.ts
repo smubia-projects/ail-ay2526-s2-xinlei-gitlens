@@ -118,8 +118,20 @@ async function callOpenAI(params: any): Promise<any> {
   const model = currentConfig.chatModel || params.model || 'gpt-4o';
 
   const messages = [];
-  if (params.config?.systemInstruction) {
-    messages.push({ role: 'system', content: params.config.systemInstruction });
+  let systemInstruction = params.config?.systemInstruction || "";
+  
+  // OpenAI JSON mode requires "json" to be in the prompt
+  if (params.config?.responseMimeType === 'application/json') {
+    if (!systemInstruction.toLowerCase().includes('json')) {
+      systemInstruction += "\n\nIMPORTANT: You must return the response in valid JSON format.";
+    }
+    if (params.config?.responseSchema) {
+      systemInstruction += `\n\nYour JSON response MUST strictly adhere to the following JSON Schema:\n${JSON.stringify(params.config.responseSchema, null, 2)}`;
+    }
+  }
+
+  if (systemInstruction) {
+    messages.push({ role: 'system', content: systemInstruction });
   }
 
   if (typeof params.contents === 'string') {
@@ -127,9 +139,6 @@ async function callOpenAI(params: any): Promise<any> {
   } else if (params.contents?.parts) {
     const content = params.contents.parts.map((p: any) => p.text).join('\n');
     messages.push({ role: 'user', content });
-  } else if (Array.isArray(params.contents)) {
-    // Handle chat history or multiple parts if needed
-    // For now, simple mapping
   }
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -147,13 +156,16 @@ async function callOpenAI(params: any): Promise<any> {
 
   if (!response.ok) {
     const err = await response.json();
+    console.error(`[AI] OpenAI API error (${response.status}):`, err);
     throw new Error(err.error?.message || `OpenAI API error: ${response.status}`);
   }
 
   const data = await response.json();
-  return {
-    text: data.choices[0].message.content
-  };
+  const text = Array.isArray(data?.choices) && data.choices.length > 0 
+    ? data.choices[0].message?.content || "" 
+    : "";
+  console.log(`[AI] OpenAI response from ${model}:`, text);
+  return { text };
 }
 
 async function callGemini(params: any, maxRetries = 3): Promise<any> {
@@ -194,6 +206,80 @@ async function callGemini(params: any, maxRetries = 3): Promise<any> {
   }
 }
 
+/**
+ * Robustly extracts JSON from a string, handling markdown blocks, preamble text, and truncated JSON.
+ */
+const extractJson = (text: string): any => {
+  const repairJson = (json: string) => {
+    let stack: string[] = [];
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < json.length; i++) {
+      const char = json[i];
+      if (escaped) { escaped = false; continue; }
+      if (char === '\\') { escaped = true; continue; }
+      if (char === '"') { inString = !inString; continue; }
+      if (!inString) {
+        if (char === '{' || char === '[') stack.push(char === '{' ? '}' : ']');
+        else if (char === '}' || char === ']') {
+          if (stack.length > 0 && stack[stack.length - 1] === char) stack.pop();
+        }
+      }
+    }
+    let repaired = json;
+    if (inString) repaired += '"';
+    while (stack.length > 0) repaired += stack.pop();
+    return repaired;
+  };
+
+  const tryParse = (str: string) => {
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      return JSON.parse(repairJson(str));
+    }
+  };
+
+  try {
+    // Try direct parse first
+    return tryParse(text.trim());
+  } catch (e) {
+    // Try to find JSON block in markdown
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch && jsonMatch[1]) {
+      try {
+        return tryParse(jsonMatch[1].trim());
+      } catch (e2) {
+        // Fall through
+      }
+    }
+
+    // Try to find the first '{' and last '}'
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return tryParse(text.substring(firstBrace, lastBrace + 1));
+      } catch (e3) {
+        // Fall through
+      }
+    }
+
+    // Try to find the first '[' and last ']'
+    const firstBracket = text.indexOf('[');
+    const lastBracket = text.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      try {
+        return tryParse(text.substring(firstBracket, lastBracket + 1));
+      } catch (e4) {
+        // Fall through
+      }
+    }
+
+    throw new Error("Could not extract valid JSON from response");
+  }
+};
+
 export const getRepoOverview = async (fileList: string[], context?: string): Promise<RepoOverview> => {
   console.time("getRepoOverview");
   try {
@@ -212,20 +298,38 @@ export const getRepoOverview = async (fileList: string[], context?: string): Pro
         responseSchema: OVERVIEW_SCHEMA,
       },
     });
-    const jsonStr = response.text?.trim() || '{}';
-    const parsed = JSON.parse(jsonStr);
+    
+    try {
+      const parsed = extractJson(response.text || '{}');
+      return {
+        summary: typeof parsed.summary === 'string' ? parsed.summary : "No summary available.",
+        entry_points: Array.isArray(parsed.entry_points) ? parsed.entry_points.map((ep: any) => ({
+          path: typeof ep.path === 'string' ? ep.path : 'unknown',
+          purpose: typeof ep.purpose === 'string' ? ep.purpose : 'No purpose provided.'
+        })) : [],
+        core_modules: Array.isArray(parsed.core_modules) ? parsed.core_modules.map((cm: any) => ({
+          folder: typeof cm.folder === 'string' ? cm.folder : 'unknown',
+          description: typeof cm.description === 'string' ? cm.description : 'No description available.'
+        })) : [],
+        architecture_type: typeof parsed.architecture_type === 'string' ? parsed.architecture_type : "Unknown"
+      } as RepoOverview;
+    } catch (parseError) {
+      console.error("Failed to parse repo overview JSON", parseError);
+      return {
+        summary: "Failed to generate repository overview due to a parsing error.",
+        entry_points: [],
+        core_modules: [],
+        architecture_type: "Unknown"
+      };
+    }
+  } catch (err) {
+    console.error("Failed to get repo overview", err);
     return {
-      summary: typeof parsed.summary === 'string' ? parsed.summary : "No summary available.",
-      entry_points: Array.isArray(parsed.entry_points) ? parsed.entry_points.map((ep: any) => ({
-        path: typeof ep.path === 'string' ? ep.path : 'unknown',
-        purpose: typeof ep.purpose === 'string' ? ep.purpose : 'No purpose provided.'
-      })) : [],
-      core_modules: Array.isArray(parsed.core_modules) ? parsed.core_modules.map((cm: any) => ({
-        folder: typeof cm.folder === 'string' ? cm.folder : 'unknown',
-        description: typeof cm.description === 'string' ? cm.description : 'No description available.'
-      })) : [],
-      architecture_type: typeof parsed.architecture_type === 'string' ? parsed.architecture_type : "Unknown"
-    } as RepoOverview;
+      summary: "Failed to generate repository overview.",
+      entry_points: [],
+      core_modules: [],
+      architecture_type: "Unknown"
+    };
   } finally {
     console.timeEnd("getRepoOverview");
   }
@@ -237,7 +341,8 @@ export const analyzeCode = async (
   fileList: string[],
   overview: RepoOverview | null,
   useFlash: boolean = false,
-  snippets: any[] = []
+  snippets: any[] = [],
+  attachedFiles: { path: string; content: string }[] = []
 ): Promise<AnalysisResult> => {
   console.time("analyzeCode");
   const model = useFlash ? "gemini-3-flash-preview" : "gemini-3.1-pro-preview";
@@ -251,21 +356,26 @@ export const analyzeCode = async (
       ? snippets.map(s => `FILE: ${s.path} (Lines ${s.startLine}-${s.endLine}):\n${s.content}`).join('\n\n---\n\n')
       : 'N/A';
 
+    const attachedContext = attachedFiles.length > 0
+      ? attachedFiles.map(f => `FILE: ${f.path}\n\n${f.content.split('\n').map((line, i) => `${i + 1}: ${line}`).join('\n')}`).join('\n\n---\n\n')
+      : 'N/A';
+
     const systemInstruction = `
       You are an expert code architect analyzing a repository.
       
       CRITICAL RULES:
       1. DO NOT assume everything is in the current file.
-      2. USE THE 'RELEVANT CODE SNIPPETS' and 'FILES IN REPO' list to identify where specific logic is actually implemented.
-      3. PRIORITIZE CODE FILES (e.g., .ts, .tsx, .js, .py, .go) in the 'highlights' array.
-      4. If the user asks about an endpoint or logic that's not in the current file, check the provided snippets and file list.
-      5. If you don't have the content for a file but know it's relevant, include it in 'highlights' with start=1 and end=1.
-      6. If you ARE analyzing the current file content or a provided snippet, you MUST provide EXACT line numbers for the 'start' and 'end' properties.
-      7. Provide the 'highlights' and 'related' arrays pointing to these files so the user can navigate to them.
-      8. BE CONCISE. Limit 'highlights' to the top 5 most relevant items. Limit 'related' to the top 5 items.
-      9. If the user query is a simple greeting (e.g., "hi", "hello"), provide a brief, friendly response and ask how you can help. Do not generate extensive highlights for greetings.
-      10. IMPORTANT: Line numbers (start/end) MUST be realistic integers. Do NOT use placeholder large numbers. If unknown, use 1.
-      11. KEEP IT SHORT: The 'answer_markdown' should be concise (max 300 words).
+      2. USE THE 'ATTACHED FILES', 'RELEVANT CODE SNIPPETS' and 'FILES IN REPO' list to identify where specific logic is actually implemented.
+      3. PRIORITIZE ATTACHED FILES if the user specifically mentions them or if they are highly relevant to the query.
+      4. PRIORITIZE CODE FILES (e.g., .ts, .tsx, .js, .py, .go) in the 'highlights' array.
+      5. If the user asks about an endpoint or logic that's not in the current file, check the provided snippets and file list.
+      6. If you don't have the content for a file but know it's relevant, include it in 'highlights' with start=1 and end=1.
+      7. If you ARE analyzing the current file content, a provided snippet, or an attached file, you MUST provide EXACT line numbers for the 'start' and 'end' properties.
+      8. Provide the 'highlights' and 'related' arrays pointing to these files so the user can navigate to them.
+      9. BE CONCISE. Limit 'highlights' to the top 5 most relevant items. Limit 'related' to the top 5 items.
+      10. If the user query is a simple greeting (e.g., "hi", "hello"), provide a brief, friendly response and ask how you can help. Do not generate extensive highlights for greetings.
+      11. IMPORTANT: Line numbers (start/end) MUST be realistic integers. Do NOT use placeholder large numbers. If unknown, use 1.
+      12. KEEP IT SHORT: The 'answer_markdown' should be concise (max 300 words).
     `;
 
     const response = await callGemini({
@@ -274,6 +384,7 @@ export const analyzeCode = async (
         parts: [
           { text: `REPO OVERVIEW: ${overview ? JSON.stringify(overview) : 'N/A'}` },
           { text: `CURRENT OPEN FILE (${currentFile?.path || 'None'}): \n\n${contentWithLines}` },
+          { text: `ATTACHED FILES (SPECIFICALLY SELECTED BY USER):\n\n${attachedContext}` },
           { text: `RELEVANT CODE SNIPPETS (FROM SEMANTIC SEARCH):\n\n${snippetsContext}` },
           { text: `FILES IN REPO (TOTAL ${fileList.length}): ${fileList.slice(0, 500).join(", ")}${fileList.length > 500 ? '... (truncated)' : ''}` },
           { text: `USER QUESTION: ${query}` }
@@ -295,39 +406,7 @@ export const analyzeCode = async (
 
     console.timeEnd("analyzeCode");
     try {
-      // Handle potential markdown code blocks in response
-      let cleanJson = jsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '');
-      
-      // Attempt to repair truncated JSON if necessary
-      const repairJson = (json: string) => {
-        let stack: string[] = [];
-        let inString = false;
-        let escaped = false;
-        for (let i = 0; i < json.length; i++) {
-          const char = json[i];
-          if (escaped) { escaped = false; continue; }
-          if (char === '\\') { escaped = true; continue; }
-          if (char === '"') { inString = !inString; continue; }
-          if (!inString) {
-            if (char === '{' || char === '[') stack.push(char === '{' ? '}' : ']');
-            else if (char === '}' || char === ']') {
-              if (stack.length > 0 && stack[stack.length - 1] === char) stack.pop();
-            }
-          }
-        }
-        let repaired = json;
-        if (inString) repaired += '"';
-        while (stack.length > 0) repaired += stack.pop();
-        return repaired;
-      };
-
-      let result: AnalysisResult;
-      try {
-        result = JSON.parse(cleanJson) as AnalysisResult;
-      } catch (firstError) {
-        cleanJson = repairJson(cleanJson);
-        result = JSON.parse(cleanJson) as AnalysisResult;
-      }
+      let result: AnalysisResult = extractJson(jsonStr);
 
       // Sanitize line numbers to prevent overflows or hallucinations
       const sanitizeLine = (n: any) => {
@@ -336,10 +415,11 @@ export const analyzeCode = async (
         return Math.floor(num);
       };
 
-      if (result.highlights) {
+      if (Array.isArray(result.highlights)) {
         result.highlights = result.highlights.map(h => ({
           ...h,
           file: typeof h.file === 'string' ? h.file : 'unknown',
+          function_name: typeof h.function_name === 'string' && h.function_name !== 'N/A' && h.function_name.trim() !== '' ? h.function_name : undefined,
           start: sanitizeLine(h.start),
           end: sanitizeLine(h.end),
           usage_examples: Array.isArray(h.usage_examples) ? h.usage_examples.map(ex => ({
@@ -348,22 +428,26 @@ export const analyzeCode = async (
             line: sanitizeLine(ex.line)
           })) : []
         }));
+      } else {
+        result.highlights = [];
       }
 
-      if (result.related) {
+      if (Array.isArray(result.related)) {
         result.related = result.related.map(r => ({
           ...r,
           file: typeof r.file === 'string' ? r.file : 'unknown',
           start: sanitizeLine(r.start),
           end: sanitizeLine(r.end)
         }));
+      } else {
+        result.related = [];
       }
 
       return {
-        answer_markdown: result.answer_markdown || "No explanation available.",
+        answer_markdown: typeof result.answer_markdown === 'string' ? result.answer_markdown : (result.answer_markdown ? JSON.stringify(result.answer_markdown) : "No explanation available."),
         highlights: result.highlights || [],
         related: result.related || [],
-        call_tree_markdown: result.call_tree_markdown || ""
+        call_tree_markdown: typeof result.call_tree_markdown === 'string' ? result.call_tree_markdown : ""
       };
     } catch (e) {
       console.error("Failed to parse Gemini response as JSON:", jsonStr);
@@ -401,6 +485,8 @@ export const getFunctionFlow = async (functionName: string, fileContent: string)
     config: {
       systemInstruction: `You are a code flow analyzer. 
       Your goal is to provide a highly structured, visual trace of the function.
+      
+      CRITICAL: ONLY trace DIRECT function calls and dependencies within the provided file content. DO NOT infer dependencies based on props passed to components or indirect calls through parent components. If a function is called via a prop, note that it is an indirect dependency via the parent, do not list it as a direct call from this component.
       
       FORMAT RULES:
       1. START with a Mermaid "graph TD" block for high-level flow.
@@ -482,7 +568,16 @@ export const getSymbolDependencies = async (
   });
 
   const jsonStr = response.text?.trim() || '{"nodes":[], "links":[]}';
-  return JSON.parse(jsonStr);
+  try {
+    const data = extractJson(jsonStr);
+    return {
+      nodes: Array.isArray(data?.nodes) ? data.nodes : [],
+      links: Array.isArray(data?.links) ? data.links : []
+    };
+  } catch (e) {
+    console.error("Failed to parse symbol dependencies JSON", e);
+    return { nodes: [], links: [] };
+  }
 };
 
 export const analyzeFileSymbols = async (
@@ -502,30 +597,72 @@ export const analyzeFileSymbols = async (
     FILE (${filename}):
     \n\n${content}`,
     config: {
-      systemInstruction: "You are a code symbol extractor. Your goal is to identify the 'meat' of the file while skipping boilerplate and configuration.",
+      systemInstruction: "You are a code symbol extractor. Your goal is to identify the 'meat' of the file while skipping boilerplate and configuration. Return a JSON object with a 'symbols' array.",
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            file: { type: Type.STRING },
-            start: { type: Type.INTEGER },
-            end: { type: Type.INTEGER },
-            label: { type: Type.STRING },
-            function_name: { type: Type.STRING },
-            explanation: { type: Type.STRING },
-            params: { type: Type.STRING },
-            returns: { type: Type.STRING }
-          },
-          required: ["file", "start", "end", "label", "explanation"]
-        }
+        type: Type.OBJECT,
+        properties: {
+          symbols: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                file: { type: Type.STRING },
+                start: { type: Type.INTEGER },
+                end: { type: Type.INTEGER },
+                label: { type: Type.STRING },
+                function_name: { type: Type.STRING },
+                explanation: { type: Type.STRING },
+                params: { type: Type.STRING },
+                returns: { type: Type.STRING }
+              },
+              required: ["file", "start", "end", "label", "explanation"]
+            }
+          }
+        },
+        required: ["symbols"]
       }
     },
   });
 
-  const jsonStr = response.text?.trim() || "[]";
-  return JSON.parse(jsonStr);
+  const jsonStr = response.text?.trim() || '{"symbols": []}';
+  console.log(`[AI] analyzeFileSymbols raw response for ${filename}:`, jsonStr);
+  try {
+    const data = extractJson(jsonStr);
+    const rawSymbols = Array.isArray(data) ? data : (data.symbols || []);
+    
+    // Map hallucinated property names to our expected schema
+    const symbols = rawSymbols.map((s: any) => {
+      const start = s.start || (Array.isArray(s.lineRange) ? s.lineRange[0] : (s.range?.start || 1));
+      const end = s.end || (Array.isArray(s.lineRange) ? s.lineRange[1] : (s.range?.end || start));
+      
+      // Normalize path: ensure it matches the input filename if it's just a filename or similar
+      let symbolFile = s.file || filename;
+      if (symbolFile && !symbolFile.includes('/') && filename.includes('/')) {
+        // If AI returned just "App.tsx" but filename is "src/App.tsx", use filename
+        if (filename.endsWith(symbolFile)) {
+          symbolFile = filename;
+        }
+      }
+
+      return {
+        file: symbolFile,
+        start: typeof start === 'number' ? start : parseInt(String(start)) || 1,
+        end: typeof end === 'number' ? end : parseInt(String(end)) || 1,
+        label: s.label || s.name || s.function_name || "Unknown Symbol",
+        function_name: s.function_name || s.name || s.label,
+        explanation: s.explanation || s.description || "No explanation provided.",
+        params: s.params || s.parameters,
+        returns: s.returns || s.returnType
+      };
+    });
+
+    console.log(`[AI] analyzeFileSymbols parsed and mapped ${symbols.length} symbols:`, symbols);
+    return symbols;
+  } catch (e) {
+    console.error("Failed to parse symbols JSON", e);
+    return [];
+  }
 };
 
 export const getUsageExamples = async (
@@ -544,26 +681,38 @@ export const getUsageExamples = async (
     USAGES:
     ${usages.slice(0, 10).map(u => `File: ${u.file}, Line: ${u.line}, Context: ${u.context}`).join("\n")}`,
     config: {
-      systemInstruction: "You are a code usage analyzer. Return a JSON array of examples.",
+      systemInstruction: "You are a code usage analyzer. Return a JSON object with an 'examples' array.",
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            file: { type: Type.STRING },
-            line: { type: Type.NUMBER },
-            arguments: { type: Type.STRING, description: "The actual values or variables passed to the function call." },
-            context_explanation: { type: Type.STRING }
-          },
-          required: ["file", "line", "arguments", "context_explanation"]
-        }
+        type: Type.OBJECT,
+        properties: {
+          examples: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                file: { type: Type.STRING },
+                line: { type: Type.NUMBER },
+                arguments: { type: Type.STRING, description: "The actual values or variables passed to the function call." },
+                context_explanation: { type: Type.STRING }
+              },
+              required: ["file", "line", "arguments", "context_explanation"]
+            }
+          }
+        },
+        required: ["examples"]
       }
     },
   });
 
-  const jsonStr = response.text?.trim() || "[]";
-  return JSON.parse(jsonStr);
+  const jsonStr = response.text?.trim() || '{"examples": []}';
+  try {
+    const data = extractJson(jsonStr);
+    return Array.isArray(data) ? data : (data.examples || []);
+  } catch (e) {
+    console.error("Failed to parse usage examples JSON", e);
+    return [];
+  }
 };
 export const summarizeFile = async (path: string, content: string): Promise<string> => {
   try {
@@ -597,7 +746,8 @@ export const embedText = async (text: string): Promise<number[]> => {
         },
         body: JSON.stringify({
           input: text,
-          model
+          model,
+          dimensions: 768
         })
       });
 
@@ -607,7 +757,7 @@ export const embedText = async (text: string): Promise<number[]> => {
       }
 
       const data = await response.json();
-      return data.data[0].embedding;
+      return Array.isArray(data?.data) && data.data.length > 0 ? data.data[0].embedding : [];
     } catch (err) {
       console.error("OpenAI Embedding failed:", err);
       return [];

@@ -24,121 +24,137 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
   useEffect(() => {
     if (!svgRef.current || data.nodes.length === 0) return;
 
-    const width = svgRef.current.clientWidth;
-    const height = svgRef.current.clientHeight;
+    const renderFlow = () => {
+      if (!svgRef.current) return;
+      const width = svgRef.current.clientWidth;
+      const height = svgRef.current.clientHeight;
 
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
+      if (width === 0 || height === 0) return;
 
-    const g = svg.append("g");
+      const svg = d3.select(svgRef.current);
+      svg.selectAll("*").remove();
 
-    // Define arrow markers
-    svg.append("defs").append("marker")
-      .attr("id", "arrowhead")
-      .attr("viewBox", "-0 -5 10 10")
-      .attr("refX", 25) // Adjusted to be outside the node rect
-      .attr("refY", 0)
-      .attr("orient", "auto")
-      .attr("markerWidth", 8)
-      .attr("markerHeight", 8)
-      .attr("xoverflow", "visible")
-      .append("svg:path")
-      .attr("d", "M 0,-5 L 10 ,0 L 0,5")
-      .attr("fill", "#3b82f6") // Solid blue for better visibility
-      .style("stroke", "none");
+      const g = svg.append("g");
 
-    const simulation = d3.forceSimulation(data.nodes as any)
-      .force("link", d3.forceLink(data.links).id((d: any) => d.id).distance(180)) // Increased distance
-      .force("charge", d3.forceManyBody().strength(-600))
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(80));
+      // Define arrow markers
+      svg.append("defs").append("marker")
+        .attr("id", "arrowhead")
+        .attr("viewBox", "-0 -5 10 10")
+        .attr("refX", 25) // Adjusted to be outside the node rect
+        .attr("refY", 0)
+        .attr("orient", "auto")
+        .attr("markerWidth", 8)
+        .attr("markerHeight", 8)
+        .attr("xoverflow", "visible")
+        .append("svg:path")
+        .attr("d", "M 0,-5 L 10 ,0 L 0,5")
+        .attr("fill", "#3b82f6") // Solid blue for better visibility
+        .style("stroke", "none");
 
-    const link = g.append("g")
-      .selectAll("line")
-      .data(data.links)
-      .enter()
-      .append("line")
-      .attr("stroke", "rgba(59, 130, 246, 0.4)") // Increased opacity
-      .attr("stroke-width", 2)
-      .attr("marker-end", "url(#arrowhead)");
+      const simulation = d3.forceSimulation(data.nodes as any)
+        .force("link", d3.forceLink(data.links).id((d: any) => d.id).distance(180))
+        .force("charge", d3.forceManyBody().strength(-600))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide().radius(80));
 
-    const node = g.append("g")
-      .selectAll("g")
-      .data(data.nodes)
-      .enter()
-      .append("g")
-      .attr("class", "cursor-pointer")
-      .on("click", (event, d: any) => {
-        onNavigate(d.file, d.line);
-      })
-      .call(d3.drag<SVGGElement, any>()
-        .on("start", dragstarted)
-        .on("drag", dragged)
-        .on("end", dragended) as any);
+      // Run simulation to completion immediately
+      for (let i = 0; i < 300; ++i) simulation.tick();
 
-    node.append("rect")
-      .attr("width", 120)
-      .attr("height", 40)
-      .attr("x", -60)
-      .attr("y", -20)
-      .attr("rx", 8)
-      .attr("fill", d => d.type === 'file' ? "rgba(15, 23, 42, 0.9)" : "rgba(30, 41, 59, 0.9)")
-      .attr("stroke", d => d.type === 'file' ? "rgba(71, 85, 105, 0.5)" : "rgba(59, 130, 246, 0.5)")
-      .attr("stroke-width", 1);
-
-    node.append("text")
-      .attr("dy", "-2")
-      .attr("text-anchor", "middle")
-      .style("fill", "#fff")
-      .style("font-size", "11px")
-      .style("font-weight", "bold")
-      .style("pointer-events", "none")
-      .text(d => d.label.length > 15 ? d.label.substring(0, 12) + "..." : d.label);
-
-    node.append("text")
-      .attr("dy", "12")
-      .attr("text-anchor", "middle")
-      .style("fill", "rgba(255, 255, 255, 0.4)")
-      .style("font-size", "9px")
-      .style("pointer-events", "none")
-      .text(d => (d.file || '').split('/').pop() || '');
-
-    simulation.on("tick", () => {
-      link
+      const link = g.append("g")
+        .selectAll("line")
+        .data(data.links)
+        .enter()
+        .append("line")
+        .attr("stroke", "rgba(59, 130, 246, 0.4)")
+        .attr("stroke-width", 2)
+        .attr("marker-end", "url(#arrowhead)")
         .attr("x1", (d: any) => d.source.x)
         .attr("y1", (d: any) => d.source.y)
         .attr("x2", (d: any) => d.target.x)
         .attr("y2", (d: any) => d.target.y);
 
-      node
-        .attr("transform", (d: any) => `translate(${d.x},${d.y})`);
+      const node = g.append("g")
+        .selectAll("g")
+        .data(data.nodes)
+        .enter()
+        .append("g")
+        .attr("class", "cursor-pointer")
+        .attr("transform", (d: any) => `translate(${d.x},${d.y})`)
+        .on("click", (event, d: any) => {
+          onNavigate(d.file, d.line);
+        })
+        .call(d3.drag<SVGGElement, any>()
+          .on("start", dragstarted)
+          .on("drag", dragged)
+          .on("end", dragended) as any);
+
+      node.append("rect")
+        .attr("width", 120)
+        .attr("height", 40)
+        .attr("x", -60)
+        .attr("y", -20)
+        .attr("rx", 8)
+        .attr("fill", d => d.type === 'file' ? "rgba(15, 23, 42, 0.9)" : "rgba(30, 41, 59, 0.9)")
+        .attr("stroke", d => d.type === 'file' ? "rgba(71, 85, 105, 0.5)" : "rgba(59, 130, 246, 0.5)")
+        .attr("stroke-width", 1);
+
+      node.append("text")
+        .attr("dy", "-2")
+        .attr("text-anchor", "middle")
+        .style("fill", "#fff")
+        .style("font-size", "11px")
+        .style("font-weight", "bold")
+        .style("pointer-events", "none")
+        .text(d => d.label.length > 15 ? d.label.substring(0, 12) + "..." : d.label);
+
+      node.append("text")
+        .attr("dy", "12")
+        .attr("text-anchor", "middle")
+        .style("fill", "rgba(255, 255, 255, 0.4)")
+        .style("font-size", "9px")
+        .style("pointer-events", "none")
+        .text(d => (d.file || '').split('/').pop() || '');
+
+      // No need for tick handler if we run simulation to completion
+
+      function dragstarted(event: any) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        event.subject.fx = event.subject.x;
+        event.subject.fy = event.subject.y;
+      }
+
+      function dragged(event: any) {
+        event.subject.fx = event.x;
+        event.subject.fy = event.y;
+      }
+
+      function dragended(event: any) {
+        if (!event.active) simulation.alphaTarget(0);
+        event.subject.fx = null;
+        event.subject.fy = null;
+      }
+
+      const zoom = d3.zoom()
+        .scaleExtent([0.1, 5])
+        .on("zoom", (event) => {
+          g.attr("transform", event.transform);
+        });
+
+      svg.call(zoom as any);
+      
+      // Center and scale to fit
+      const initialScale = 0.8;
+      svg.call(zoom.transform as any, d3.zoomIdentity.translate(width/2, height/2).scale(initialScale).translate(-width/2, -height/2));
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      renderFlow();
     });
 
-    function dragstarted(event: any) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      event.subject.fx = event.subject.x;
-      event.subject.fy = event.subject.y;
-    }
+    resizeObserver.observe(svgRef.current);
+    renderFlow();
 
-    function dragged(event: any) {
-      event.subject.fx = event.x;
-      event.subject.fy = event.y;
-    }
-
-    function dragended(event: any) {
-      if (!event.active) simulation.alphaTarget(0);
-      event.subject.fx = null;
-      event.subject.fy = null;
-    }
-
-    const zoom = d3.zoom()
-      .scaleExtent([0.1, 5])
-      .on("zoom", (event) => {
-        g.attr("transform", event.transform);
-      });
-
-    svg.call(zoom as any);
-
+    return () => resizeObserver.disconnect();
   }, [data, onNavigate]);
 
   const hasSidebar = (data.usage_examples && data.usage_examples.length > 0) || data.call_flow_markdown;

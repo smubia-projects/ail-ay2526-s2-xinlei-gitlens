@@ -4,6 +4,7 @@ export interface RepoFile {
   type: 'blob' | 'tree';
   sha: string;
   url: string;
+  content?: string;
 }
 
 export interface Highlight {

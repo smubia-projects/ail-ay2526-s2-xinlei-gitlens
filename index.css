@@ -9,6 +9,18 @@
   body {
     @apply bg-slate-950 text-slate-100 antialiased;
   }
+  
+  button, a, [role="button"], .clickable, .cursor-pointer {
+    @apply cursor-pointer transition-all duration-200;
+  }
+
+  button:hover, a:hover, [role="button"]:hover, .clickable:hover, .cursor-pointer:hover {
+    @apply opacity-80;
+  }
+
+  button:active, a:active, [role="button"]:active, .clickable:active, .cursor-pointer:active {
+    @apply scale-95;
+  }
 }
 
 /* Custom Scrollbar */

@@ -8,6 +8,7 @@ import axios from "axios";
 
 import { RepoModel } from "./models/Repo.js";
 import { SnippetModel } from "./models/Snippet.js";
+import { UserModel } from "./models/User.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -157,6 +158,41 @@ async function startServer() {
     });
   });
 
+  // User Config Routes
+  app.get("/api/user/config", async (req: any, res) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    
+    try {
+      const user = await UserModel.findOne({ githubId: req.user.id });
+      if (!user) return res.status(404).json({ error: "User not found" });
+      
+      res.json(user.aiConfig || {});
+    } catch (err) {
+      console.error("Failed to fetch user config:", err);
+      res.status(500).json({ error: "Failed to fetch user config" });
+    }
+  });
+
+  app.post("/api/user/config", async (req: any, res) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    
+    try {
+      const user = await UserModel.findOne({ githubId: req.user.id });
+      if (!user) return res.status(404).json({ error: "User not found" });
+      
+      user.aiConfig = {
+        ...(user.aiConfig ? (user.aiConfig as any).toObject() : {}),
+        ...req.body
+      };
+      
+      await user.save();
+      res.json(user.aiConfig);
+    } catch (err) {
+      console.error("Failed to save user config:", err);
+      res.status(500).json({ error: "Failed to save user config" });
+    }
+  });
+
   // Auth Routes
   app.get("/api/auth/github/url", (req, res) => {
     const client_id = process.env.GITHUB_CLIENT_ID;
@@ -222,6 +258,23 @@ async function startServer() {
         id: userRes.data.id,
         avatar_url: userRes.data.avatar_url
       };
+
+      // Find or create user in MongoDB
+      let user = await UserModel.findOne({ githubId: userData.id });
+      if (!user) {
+        user = await UserModel.create({
+          githubId: userData.id,
+          login: userData.login,
+          avatarUrl: userData.avatar_url
+        });
+        console.log(`New user created: ${userData.login}`);
+      } else {
+        // Update login and avatar if they changed
+        user.login = userData.login;
+        user.avatarUrl = userData.avatar_url;
+        await user.save();
+        console.log(`Existing user logged in: ${userData.login}`);
+      }
 
       // Generate JWT token
       const token = jwt.sign({ 

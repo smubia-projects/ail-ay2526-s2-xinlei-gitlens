@@ -72,7 +72,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, overview, repoName,
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] mb-8 self-start">Language Mix</h3>
             <div className="w-full h-[200px] flex items-center justify-center min-w-0 min-h-0 relative">
               {isMounted && stats.languages.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                   <PieChart>
                     <Pie
                       data={stats.languages}

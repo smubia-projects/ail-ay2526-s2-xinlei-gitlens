@@ -120,6 +120,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ files, onSelectFile,
           <div
             className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-slate-800 transition-colors text-sm ${isSelected ? 'bg-blue-600/20 text-blue-400 border-r-2 border-blue-500' : 'text-slate-400'}`}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
+            draggable={node.type === 'blob'}
+            onDragStart={(e) => {
+              if (node.type === 'blob') {
+                e.dataTransfer.setData('text/plain', node.path);
+                e.dataTransfer.effectAllowed = 'copy';
+              }
+            }}
             onClick={() => {
               if (node.type === 'tree') toggleExpand(node.path);
               else onSelectFile(node.path);
