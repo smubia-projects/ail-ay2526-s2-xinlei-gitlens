@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode, Settings, Copy, Check } from 'lucide-react';
 import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
@@ -647,7 +647,7 @@ export default function App() {
     }
   };
 
-  const handleSelectFile = async (path: string, r = repo) => {
+  const handleSelectFile = useCallback(async (path: string, r = repo) => {
     if (!r) return;
     try {
       const content = await fetchFileContent(r, path, githubToken || undefined);
@@ -657,7 +657,7 @@ export default function App() {
       console.error(err);
       setError(err.message || 'Failed to load file content.');
     }
-  };
+  }, [repo, githubToken]);
 
   const refineHighlights = (highlights: Highlight[], fileContent: string | undefined): Highlight[] => {
     if (!fileContent) return highlights;
@@ -888,7 +888,7 @@ export default function App() {
     setIsDragging(false);
   };
 
-  const handleNavigate = (path: string, line?: number, highlight?: Highlight) => {
+  const handleNavigate = useCallback((path: string, line?: number, highlight?: Highlight) => {
     const fileExists = files.find(f => f.path.endsWith(path) || path.endsWith(f.path));
     if (fileExists) {
        handleSelectFile(fileExists.path);
@@ -911,7 +911,22 @@ export default function App() {
          }
        }
     }
-  };
+  }, [files, handleSelectFile]);
+
+  const handleCloseLogicFlow = useCallback(() => {
+    setDependencyData(null);
+    setActiveTab('code');
+  }, []);
+
+  const handleNavigateFromFlow = useCallback((path: string, line?: number) => {
+    handleNavigate(path, line);
+    setActiveTab('code');
+  }, [handleNavigate]);
+
+  const handleSelectFileFromMap = useCallback((path: string) => {
+    handleSelectFile(path);
+    setActiveTab('code');
+  }, [handleSelectFile]);
 
   const handleModuleClick = (moduleName: string, description: string) => {
     setMessages(prev => [...prev, { role: 'user', content: `Explaining core module: ${moduleName}` }]);
@@ -1323,21 +1338,12 @@ export default function App() {
                 </div>
               )
             ) : activeTab === 'map' ? (
-              <RepoVisualizer files={files} onSelectFile={(path) => {
-                handleSelectFile(path);
-                setActiveTab('code');
-              }} />
+              <RepoVisualizer files={files} onSelectFile={handleSelectFileFromMap} />
             ) : activeTab === 'logic' && dependencyData ? (
               <FlowVisualizer 
                 data={dependencyData} 
-                onClose={() => {
-                  setDependencyData(null);
-                  setActiveTab('code');
-                }}
-                onNavigate={(path, line) => {
-                  handleNavigate(path, line);
-                  setActiveTab('code');
-                }}
+                onClose={handleCloseLogicFlow}
+                onNavigate={handleNavigateFromFlow}
               />
             ) : null}
           </div>

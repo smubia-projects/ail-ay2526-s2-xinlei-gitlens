@@ -11,9 +11,10 @@ interface FlowVisualizerProps {
   onNavigate: (path: string, line?: number) => void;
 }
 
-export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, onNavigate }) => {
+export const FlowVisualizer: React.FC<FlowVisualizerProps> = React.memo(({ data, onClose, onNavigate }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [sidebarTab, setSidebarTab] = useState<'usages' | 'trace'>('usages');
+  const lastDataRef = useRef<DependencyGraphData | null>(null);
 
   useEffect(() => {
     if (data.call_flow_markdown && !data.usage_examples?.length) {
@@ -23,6 +24,10 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
 
   useEffect(() => {
     if (!svgRef.current || data.nodes.length === 0) return;
+    
+    // Prevent re-rendering if data hasn't changed
+    if (lastDataRef.current === data) return;
+    lastDataRef.current = data;
 
     const renderFlow = () => {
       if (!svgRef.current) return;
@@ -40,7 +45,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
       svg.append("defs").append("marker")
         .attr("id", "arrowhead")
         .attr("viewBox", "-0 -5 10 10")
-        .attr("refX", 25) // Adjusted to be outside the node rect
+        .attr("refX", 35) // Adjusted for wider nodes
         .attr("refY", 0)
         .attr("orient", "auto")
         .attr("markerWidth", 8)
@@ -48,14 +53,14 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
         .attr("xoverflow", "visible")
         .append("svg:path")
         .attr("d", "M 0,-5 L 10 ,0 L 0,5")
-        .attr("fill", "#ffffff") // Solid white for better visibility
+        .attr("fill", "#ffffff")
         .style("stroke", "none");
 
       const simulation = d3.forceSimulation(data.nodes as any)
-        .force("link", d3.forceLink(data.links).id((d: any) => d.id).distance(180))
-        .force("charge", d3.forceManyBody().strength(-600))
+        .force("link", d3.forceLink(data.links).id((d: any) => d.id).distance(220))
+        .force("charge", d3.forceManyBody().strength(-800))
         .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collision", d3.forceCollide().radius(80));
+        .force("collision", d3.forceCollide().radius(100));
 
       // Run simulation to completion immediately
       for (let i = 0; i < 300; ++i) simulation.tick();
@@ -65,8 +70,8 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
         .data(data.links)
         .enter()
         .append("line")
-        .attr("stroke", "rgba(255, 255, 255, 0.2)")
-        .attr("stroke-width", 2)
+        .attr("stroke", "rgba(255, 255, 255, 0.15)")
+        .attr("stroke-width", 1.5)
         .attr("marker-end", "url(#arrowhead)")
         .attr("x1", (d: any) => d.source.x)
         .attr("y1", (d: any) => d.source.y)
@@ -88,34 +93,45 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
           .on("drag", dragged)
           .on("end", dragended) as any);
 
+      const nodeWidth = 200;
+      const nodeHeight = 50;
+
       node.append("rect")
-        .attr("width", 120)
-        .attr("height", 40)
-        .attr("x", -60)
-        .attr("y", -20)
-        .attr("rx", 8)
-        .attr("fill", d => d.type === 'file' ? "rgba(255, 255, 255, 0.05)" : "rgba(255, 255, 255, 0.1)")
-        .attr("stroke", d => d.type === 'file' ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 255, 255, 0.2)")
-        .attr("stroke-width", 1);
+        .attr("width", nodeWidth)
+        .attr("height", nodeHeight)
+        .attr("x", -nodeWidth / 2)
+        .attr("y", -nodeHeight / 2)
+        .attr("rx", 14)
+        .attr("fill", d => d.type === 'file' ? "rgba(255, 255, 255, 0.05)" : "rgba(255, 255, 255, 0.12)")
+        .attr("stroke", d => d.type === 'file' ? "rgba(255, 255, 255, 0.15)" : "rgba(255, 255, 255, 0.3)")
+        .attr("stroke-width", 1.5)
+        .style("backdrop-filter", "blur(12px)")
+        .attr("class", "transition-all duration-300 hover:fill-white/20 hover:stroke-white/50");
+
+      // Add tooltip
+      node.append("title")
+        .text(d => `${d.label}\nFile: ${d.file}${d.line ? ` (Line ${d.line})` : ''}`);
 
       node.append("text")
         .attr("dy", "-2")
         .attr("text-anchor", "middle")
         .style("fill", "#fff")
-        .style("font-size", "11px")
-        .style("font-weight", "bold")
+        .style("font-size", "12px")
+        .style("font-weight", "700")
         .style("pointer-events", "none")
-        .text(d => d.label.length > 15 ? d.label.substring(0, 12) + "..." : d.label);
+        .text(d => d.label.length > 28 ? d.label.substring(0, 25) + "..." : d.label);
 
       node.append("text")
-        .attr("dy", "12")
+        .attr("dy", "16")
         .attr("text-anchor", "middle")
-        .style("fill", "rgba(255, 255, 255, 0.4)")
-        .style("font-size", "9px")
+        .style("fill", "rgba(255, 255, 255, 0.5)")
+        .style("font-size", "10px")
+        .style("font-weight", "500")
         .style("pointer-events", "none")
-        .text(d => (d.file || '').split('/').pop() || '');
-
-      // No need for tick handler if we run simulation to completion
+        .text(d => {
+          const parts = (d.file || '').split('/');
+          return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : d.file;
+        });
 
       function dragstarted(event: any) {
         if (!event.active) simulation.alphaTarget(0.3).restart();
@@ -142,7 +158,6 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
 
       svg.call(zoom as any);
       
-      // Center and scale to fit
       const initialScale = 0.8;
       svg.call(zoom.transform as any, d3.zoomIdentity.translate(width/2, height/2).scale(initialScale).translate(-width/2, -height/2));
     };
@@ -156,6 +171,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
 
     return () => resizeObserver.disconnect();
   }, [data, onNavigate]);
+
 
   const hasSidebar = (data.usage_examples && data.usage_examples.length > 0) || data.call_flow_markdown;
 
@@ -374,4 +390,4 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
       </div>
     </div>
   );
-};
+});
