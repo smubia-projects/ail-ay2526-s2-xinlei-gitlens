@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Github, Search, Activity, Calendar, ArrowRight, Trash2, RefreshCw, GitBranch, Sparkles, AlertTriangle, Clock, ShieldCheck, Settings, Loader2, Plus, Folder } from 'lucide-react';
+import { Github, Search, Activity, Calendar, ArrowRight, Trash2, RefreshCw, GitBranch, Sparkles, AlertTriangle, Clock, ShieldCheck, Settings, Loader2, Plus, Folder, Link } from 'lucide-react';
 import { RepoStats, RepoOverview, AIConfig } from '../types';
 import { embedText, setAIConfig } from '../services/gemini';
+import { parseRepoUrl } from '../services/github';
 import { SettingsModal } from './SettingsModal';
 import { AnimatedShinyText } from './ui/AnimatedShinyText';
 import { MagicCard } from './ui/MagicCard';
@@ -45,6 +46,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'indexed' | 'github'>('indexed');
   const [indexStatus, setIndexStatus] = useState<string | null>(null);
+  const [publicUrl, setPublicUrl] = useState('');
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   const fetchRepos = async (retryCount = 0) => {
     setIsLoading(true);
@@ -129,7 +132,6 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
       fetchUserRepos();
     } else {
       setUserRepos([]);
-      setActiveTab('indexed');
     }
   }, [githubUser]);
 
@@ -175,6 +177,17 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
     } finally {
       setDeletingRepo(null);
     }
+  };
+
+  const handlePublicUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setUrlError(null);
+    const parsed = parseRepoUrl(publicUrl);
+    if (!parsed) {
+      setUrlError('Invalid GitHub URL. Format: https://github.com/owner/repo');
+      return;
+    }
+    onSelectRepo(parsed.owner, parsed.name, parsed.branch);
   };
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -254,17 +267,31 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                   </button>
                 </div>
               ) : (
-                <button 
-                  onClick={onConnectGitHub}
-                  className="flex items-center gap-4 px-8 py-5 bg-white hover:bg-neutral-200 text-black rounded-2xl transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)] group active:scale-95"
-                >
-                  <Github size={20} />
-                  <div className="text-left">
-                    <div className="text-xs font-black uppercase tracking-widest">Connect GitHub</div>
-                    <div className="text-[10px] opacity-60">Unlock private repository indexing</div>
-                  </div>
-                  <ArrowRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" />
-                </button>
+                <div className="flex flex-wrap gap-4">
+                  <button 
+                    onClick={onConnectGitHub}
+                    className="flex items-center gap-4 px-8 py-5 bg-white hover:bg-neutral-200 text-black rounded-2xl transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)] group active:scale-95"
+                  >
+                    <Github size={20} />
+                    <div className="text-left">
+                      <div className="text-xs font-black uppercase tracking-widest">Connect GitHub</div>
+                      <div className="text-[10px] opacity-60">Unlock private repository indexing</div>
+                    </div>
+                    <ArrowRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                  
+                  <button 
+                    onClick={() => setActiveTab('github')}
+                    className="flex items-center gap-4 px-8 py-5 bg-neutral-900/50 border border-white/10 hover:border-white/20 text-white rounded-2xl transition-all group active:scale-95 glass"
+                  >
+                    <Link size={20} className="text-brand-primary" />
+                    <div className="text-left">
+                      <div className="text-xs font-black uppercase tracking-widest">Index Public Repo</div>
+                      <div className="text-[10px] opacity-60">Analyze any public GitHub URL</div>
+                    </div>
+                    <ArrowRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -385,7 +412,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                   : 'text-neutral-500 hover:text-white'
               }`}
             >
-              GitHub
+              Index New
             </button>
           </div>
           
@@ -423,7 +450,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                   </div>
                   <div className="mt-8 text-center">
                     <h3 className="text-lg font-black text-white uppercase tracking-tighter">Index New Repository</h3>
-                    <p className="text-neutral-500 text-xs mt-2 font-medium">Connect your GitHub to start analyzing</p>
+                    <p className="text-neutral-500 text-xs mt-2 font-medium">Connect GitHub or enter a public URL to analyze</p>
                   </div>
                 </MagicCard>
 
@@ -537,20 +564,74 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
           </>
         ) : (
           <div className="space-y-10">
+            {/* Public URL Indexing Section */}
+            <div className="bg-neutral-900/40 border border-white/5 p-8 rounded-[2.5rem] glass">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-brand-primary/10 rounded-xl border border-brand-primary/20">
+                      <Link size={18} className="text-brand-primary" />
+                    </div>
+                    <h3 className="text-xl font-black text-white uppercase tracking-tighter">Index Public Repository</h3>
+                  </div>
+                  <p className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest">Enter a GitHub URL to analyze any public codebase</p>
+                </div>
+                
+                <form onSubmit={handlePublicUrlSubmit} className="flex-1 max-w-xl w-full">
+                  <div className="relative group">
+                    <input 
+                      type="text" 
+                      placeholder="https://github.com/owner/repository"
+                      value={publicUrl}
+                      onChange={(e) => setPublicUrl(e.target.value)}
+                      className={`w-full bg-black/40 border ${urlError ? 'border-red-500/50' : 'border-white/10'} rounded-2xl py-4 pl-6 pr-32 focus:outline-none focus:border-brand-primary/50 transition-all text-white placeholder:text-neutral-700 text-sm font-medium`}
+                    />
+                    <button 
+                      type="submit"
+                      className="absolute right-2 top-2 bottom-2 px-6 bg-white hover:bg-neutral-200 text-black rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+                    >
+                      Index Now
+                    </button>
+                  </div>
+                  {urlError && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest mt-2 ml-2">{urlError}</p>}
+                </form>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between border-b border-white/5 pb-6">
               <div>
-                <h3 className="text-xl font-black text-white uppercase tracking-tighter">Available Repositories</h3>
-                <p className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mt-1">Select a repository to begin indexing</p>
+                <h3 className="text-xl font-black text-white uppercase tracking-tighter">
+                  {githubUser ? 'Your GitHub Repositories' : 'Connect GitHub for Private Repos'}
+                </h3>
+                <p className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mt-1">
+                  {githubUser ? 'Select a repository from your account' : 'Unlock access to your private and organization projects'}
+                </p>
               </div>
-              <button 
-                onClick={fetchUserRepos}
-                disabled={isLoadingUserRepos}
-                className="flex items-center gap-3 px-6 py-3 bg-neutral-900/50 border border-white/5 rounded-xl text-[10px] font-black text-neutral-400 hover:text-white hover:border-white/20 uppercase tracking-widest transition-all disabled:opacity-50 glass"
-              >
-                <RefreshCw size={14} className={isLoadingUserRepos ? 'animate-spin' : ''} />
-                Refresh List
-              </button>
+              {githubUser && (
+                <button 
+                  onClick={fetchUserRepos}
+                  disabled={isLoadingUserRepos}
+                  className="flex items-center gap-3 px-6 py-3 bg-neutral-900/50 border border-white/5 rounded-xl text-[10px] font-black text-neutral-400 hover:text-white hover:border-white/20 uppercase tracking-widest transition-all disabled:opacity-50 glass"
+                >
+                  <RefreshCw size={14} className={isLoadingUserRepos ? 'animate-spin' : ''} />
+                  Refresh List
+                </button>
+              )}
             </div>
+
+            {!githubUser && (
+              <div className="flex flex-col items-center justify-center py-20 bg-neutral-900/20 rounded-[2.5rem] border border-white/5 border-dashed">
+                <Github size={48} className="text-neutral-700 mb-6" />
+                <h4 className="text-lg font-black text-white uppercase tracking-tighter mb-2">Private Repositories</h4>
+                <p className="text-neutral-500 text-xs mb-8 text-center max-w-xs">Connect your GitHub account to index and analyze your private and organization codebases.</p>
+                <button 
+                  onClick={onConnectGitHub}
+                  className="px-8 py-4 bg-white hover:bg-neutral-200 text-black font-black rounded-xl transition-all active:scale-95 uppercase text-[10px] tracking-widest"
+                >
+                  Connect GitHub
+                </button>
+              </div>
+            )}
 
             {userReposError && (
               <div className="bg-red-500/10 border border-red-500/20 p-6 rounded-[2rem] flex flex-col gap-3 animate-in fade-in slide-in-from-top-4">
