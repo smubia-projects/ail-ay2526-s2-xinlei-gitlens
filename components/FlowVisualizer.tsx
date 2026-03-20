@@ -100,8 +100,8 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = React.memo(({ data,
         .attr("stroke", "rgba(255, 255, 255, 0.15)")
         .attr("stroke-width", 1.5)
         .attr("marker-end", "url(#arrowhead)")
-        .attr("x1", (d: any) => d.source.x)
-        .attr("y1", (d: any) => d.source.y)
+        .attr("x1", (d: any) => getIntersection(d.target, d.source).x)
+        .attr("y1", (d: any) => getIntersection(d.target, d.source).y)
         .attr("x2", (d: any) => getIntersection(d.source, d.target).x)
         .attr("y2", (d: any) => getIntersection(d.source, d.target).y);
 
