@@ -92,7 +92,7 @@ export default function App() {
   const [url, setUrl] = useState('https://github.com/facebook/react');
   const [repo, setRepo] = useState<Repository | null>(null);
   const [files, setFiles] = useState<RepoFile[]>([]);
-  const [selectedFile, setSelectedFile] = useState<{ path: string; content: string } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{ path: string; content: string; isImage?: boolean; downloadUrl?: string } | null>(null);
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -134,7 +134,7 @@ export default function App() {
     const file = files.find(f => f.path === path);
     if (file && !attachedFiles.some(af => af.path === path)) {
       try {
-        const content = await fetchFileContent(repo!, path, githubToken || undefined);
+        const { content } = await fetchFileContent(repo!, path, githubToken || undefined);
         setAttachedFiles(prev => [...prev, { ...file, content }]);
       } catch (e) {
         console.error("Failed to fetch content for attached file:", e);
@@ -436,7 +436,8 @@ export default function App() {
       const contextFile = tree.find(f => f.path.toLowerCase() === 'package.json' || f.path.toLowerCase() === 'readme.md');
       if (contextFile) {
         try {
-          context = await fetchFileContent(parsed, contextFile.path, githubToken || undefined);
+          const { content } = await fetchFileContent(parsed, contextFile.path, githubToken || undefined);
+          context = content;
         } catch (e) {
           console.warn("Failed to fetch context file", e);
         }
@@ -456,8 +457,8 @@ export default function App() {
         
         if (exists) {
           try {
-            const entryContent = await fetchFileContent(parsed, topEntry, githubToken || undefined);
-            initialHighlights = await analyzeFileSymbols(topEntry, entryContent);
+            const { content } = await fetchFileContent(parsed, topEntry, githubToken || undefined);
+            initialHighlights = await analyzeFileSymbols(topEntry, content);
             setActiveHighlights(initialHighlights);
           } catch (e) {
             console.warn("Failed to scan entry point", e);
@@ -553,12 +554,12 @@ export default function App() {
           const BATCH_SIZE = 5;
           let completedFiles = 0;
 
-          for (let i = 0; i < codeFiles.length; i += BATCH_SIZE) {
+          for (let i = 0; i < codeFiles.slice(0, 50).length; i += BATCH_SIZE) {
             const batch = codeFiles.slice(i, i + BATCH_SIZE);
             
             const batchResults = await Promise.all(batch.map(async (file) => {
               try {
-                const content = await fetchFileContent(parsed, file.path, githubToken || undefined);
+                const { content } = await fetchFileContent(parsed, file.path, githubToken || undefined);
                 
                 // Get a high-level summary of the file to provide context for all chunks
                 const fileSummary = await summarizeFile(file.path, content);
@@ -650,8 +651,8 @@ export default function App() {
   const handleSelectFile = useCallback(async (path: string, r = repo) => {
     if (!r) return;
     try {
-      const content = await fetchFileContent(r, path, githubToken || undefined);
-      setSelectedFile({ path, content });
+      const { content, isImage, downloadUrl } = await fetchFileContent(r, path, githubToken || undefined);
+      setSelectedFile({ path, content, isImage, downloadUrl });
       setError(null);
     } catch (err: any) {
       console.error(err);
@@ -1332,6 +1333,8 @@ export default function App() {
                   onExplainSelection={handleExplainSelection}
                   onScanFile={handleScanFile}
                   isScanning={isScanningFile}
+                  isImage={selectedFile.isImage}
+                  downloadUrl={selectedFile.downloadUrl}
                 />
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-neutral-700 gap-4 opacity-50 p-10">

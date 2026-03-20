@@ -66,7 +66,7 @@ export const fetchRepoTree = async (repo: Repository, token?: string): Promise<R
   return (data.tree || []) as RepoFile[];
 };
 
-export const fetchFileContent = async (repo: Repository, path: string, token?: string): Promise<string> => {
+export const fetchFileContent = async (repo: Repository, path: string, token?: string): Promise<{ content: string; isImage: boolean; downloadUrl?: string }> => {
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `token ${token}`;
@@ -82,22 +82,28 @@ export const fetchFileContent = async (repo: Repository, path: string, token?: s
   }
   const data = await response.json();
   
+  const isImage = /\.(png|jpe?g|gif|svg|webp|ico)$/i.test(path);
+
+  if (isImage && data.download_url) {
+    return { content: '', isImage: true, downloadUrl: data.download_url };
+  }
+
   if (!data.content) {
     if (data.type === 'dir') {
-      return 'This is a directory. Select a file to view its content.';
+      return { content: 'This is a directory. Select a file to view its content.', isImage: false };
     }
     if (data.size > 1000000) {
-      return 'File is too large to display inline. Please view it directly on GitHub.';
+      return { content: 'File is too large to display inline. Please view it directly on GitHub.', isImage: false };
     }
-    return 'No content available for this file.';
+    return { content: 'No content available for this file.', isImage: false };
   }
 
   try {
     // Standard robust base64 to UTF-8 decoding for browser
     const base64 = data.content.replace(/\s/g, '');
-    return decodeURIComponent(escape(atob(base64)));
+    return { content: decodeURIComponent(escape(atob(base64))), isImage: false };
   } catch (e) {
     console.error('Base64 decoding failed', e);
-    return 'Error decoding file content. It might be binary or use an unsupported encoding.';
+    return { content: 'Error decoding file content. It might be binary or use an unsupported encoding.', isImage: false };
   }
 };

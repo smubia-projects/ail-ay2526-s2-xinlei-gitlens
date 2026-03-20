@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Highlight } from '../types';
-import { Sparkles, Loader2, Copy, Check } from 'lucide-react';
+import { Sparkles, Loader2, Copy, Check, ExternalLink } from 'lucide-react';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-javascript';
@@ -20,6 +20,8 @@ interface CodeViewerProps {
   onExplainSelection?: (selection: string) => void;
   onScanFile?: () => void;
   isScanning?: boolean;
+  isImage?: boolean;
+  downloadUrl?: string;
 }
 
 interface CodeLineProps {
@@ -91,7 +93,7 @@ const CodeLine = React.memo<CodeLineProps>(({ line, lineNum, language, matchingH
   );
 });
 
-export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highlights, scrollTrigger, targetLine, onExplainSelection, onScanFile, isScanning }) => {
+export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highlights, scrollTrigger, targetLine, onExplainSelection, onScanFile, isScanning, isImage, downloadUrl }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{ text: string; top: number; left: number } | null>(null);
@@ -256,29 +258,54 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
       )}
 
       <div ref={containerRef} className="flex-1 overflow-auto py-6 custom-scrollbar scroll-smooth">
-        <div className="min-w-fit w-full">
-          <table className="w-full border-collapse">
-            <tbody>
-              {visibleLines.map((line, i) => (
-                <CodeLine 
-                  key={i + 1}
-                  line={line}
-                  lineNum={i + 1}
-                  language={language}
-                  matchingHighlight={fileHighlights.find(h => (i + 1) >= h.start && (i + 1) <= h.end)}
-                  isHovered={hoveredLine === (i + 1)}
-                  onMouseEnter={setHoveredLine}
-                  onMouseLeave={() => setHoveredLine(null)}
-                />
-              ))}
-            </tbody>
-          </table>
-          {visibleCount < lines.length && (
-            <div ref={observerTarget} className="h-20 flex items-center justify-center text-neutral-500 text-xs font-bold uppercase tracking-widest">
-              <Loader2 size={16} className="animate-spin mr-2" /> Loading more lines...
+        {isImage && downloadUrl ? (
+          <div className="flex flex-col items-center justify-center p-12 min-h-[400px]">
+            <div className="relative group">
+              <div className="absolute -inset-4 bg-white/5 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <img 
+                src={downloadUrl} 
+                alt={filename} 
+                className="max-w-full max-h-[70vh] rounded-2xl shadow-2xl border border-white/10 relative z-10 animate-in fade-in zoom-in-95 duration-500"
+                referrerPolicy="no-referrer"
+              />
             </div>
-          )}
-        </div>
+            <div className="mt-8 flex flex-col items-center gap-2">
+              <span className="text-neutral-400 text-xs font-bold uppercase tracking-widest">Image Preview</span>
+              <a 
+                href={downloadUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-brand-primary text-[11px] hover:underline flex items-center gap-1"
+              >
+                View Raw <ExternalLink size={10} />
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div className="min-w-fit w-full">
+            <table className="w-full border-collapse">
+              <tbody>
+                {visibleLines.map((line, i) => (
+                  <CodeLine 
+                    key={i + 1}
+                    line={line}
+                    lineNum={i + 1}
+                    language={language}
+                    matchingHighlight={fileHighlights.find(h => (i + 1) >= h.start && (i + 1) <= h.end)}
+                    isHovered={hoveredLine === (i + 1)}
+                    onMouseEnter={setHoveredLine}
+                    onMouseLeave={() => setHoveredLine(null)}
+                  />
+                ))}
+              </tbody>
+            </table>
+            {visibleCount < lines.length && (
+              <div ref={observerTarget} className="h-20 flex items-center justify-center text-neutral-500 text-xs font-bold uppercase tracking-widest">
+                <Loader2 size={16} className="animate-spin mr-2" /> Loading more lines...
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
