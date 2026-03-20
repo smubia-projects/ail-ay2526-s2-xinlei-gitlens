@@ -1131,9 +1131,14 @@ export default function App() {
         <div className="flex items-center gap-4 shrink-0">
           <button 
             onClick={() => setView('home')}
-            className="group relative p-2 bg-white rounded-xl shadow-2xl shadow-white/10 hover:scale-105 active:scale-95 transition-all"
+            className="group relative p-1 bg-white rounded-xl shadow-2xl shadow-white/10 hover:scale-105 active:scale-95 transition-all overflow-hidden"
           >
-            <Compass className="text-black" size={20} />
+            <img 
+              src="/logo.png" 
+              alt="GitLens Cursor Logo" 
+              className="h-8 w-8 object-contain"
+              referrerPolicy="no-referrer"
+            />
           </button>
           <div className="flex flex-col">
             <h1 className="font-bold text-base tracking-tight cursor-pointer text-white flex items-center gap-2" onClick={() => setView('home')}>

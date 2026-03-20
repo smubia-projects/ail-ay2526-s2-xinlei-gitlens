@@ -231,8 +231,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-12 border-b border-white/5 pb-16 pt-8">
           <div className="space-y-6 flex-1">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-brand-primary/10 rounded-xl border border-brand-primary/20">
-                <Activity size={24} className="text-brand-primary animate-pulse" />
+              <div className="p-1 bg-brand-primary/10 rounded-xl border border-brand-primary/20 overflow-hidden">
+                <img 
+                  src="/logo.png" 
+                  alt="GitLens Cursor Logo" 
+                  className="h-8 w-8 object-contain"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <AnimatedShinyText className="text-[10px] font-black uppercase tracking-[0.4em] m-0 text-neutral-500">
                 GitLens Cursor • v1.0
@@ -245,27 +250,40 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
               Your personal library of analyzed codebases. Instant access to architecture, logic flows, and deep semantic insights powered by Gemini.
             </p>
             
-            <div className="pt-6">
+            <div className="pt-6 flex flex-wrap gap-4">
               {githubUser ? (
-                <div className="flex items-center gap-5 p-2 pr-6 bg-neutral-900/50 backdrop-blur-xl border border-white/5 rounded-full w-fit group hover:border-white/10 transition-all">
-                  <img 
-                    src={githubUser.avatar_url} 
-                    alt={githubUser.login} 
-                    className="h-12 w-12 rounded-full border border-white/10 shadow-2xl group-hover:scale-105 transition-transform"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="flex flex-col">
-                    <div className="text-[9px] font-bold text-neutral-600 uppercase tracking-widest">Authenticated</div>
-                    <div className="text-base font-bold text-white leading-tight">{githubUser.login}</div>
+                <>
+                  <div className="flex items-center gap-5 p-2 pr-6 bg-neutral-900/50 backdrop-blur-xl border border-white/5 rounded-full w-fit group hover:border-white/10 transition-all">
+                    <img 
+                      src={githubUser.avatar_url} 
+                      alt={githubUser.login} 
+                      className="h-12 w-12 rounded-full border border-white/10 shadow-2xl group-hover:scale-105 transition-transform"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="flex flex-col">
+                      <div className="text-[9px] font-bold text-neutral-600 uppercase tracking-widest">Authenticated</div>
+                      <div className="text-base font-bold text-white leading-tight">{githubUser.login}</div>
+                    </div>
+                    <div className="h-8 w-[1px] bg-white/5 mx-2" />
+                    <button 
+                      onClick={onLogoutGitHub}
+                      className="text-[10px] text-neutral-500 hover:text-red-400 font-bold uppercase tracking-widest transition-colors"
+                    >
+                      Disconnect
+                    </button>
                   </div>
-                  <div className="h-8 w-[1px] bg-white/5 mx-2" />
+
                   <button 
-                    onClick={onLogoutGitHub}
-                    className="text-[10px] text-neutral-500 hover:text-red-400 font-bold uppercase tracking-widest transition-colors"
+                    onClick={() => setActiveTab('github')}
+                    className="flex items-center gap-4 px-6 py-3 bg-neutral-900/50 border border-white/10 hover:border-white/20 text-white rounded-full transition-all group active:scale-95 glass"
                   >
-                    Disconnect
+                    <Link size={18} className="text-brand-primary" />
+                    <div className="text-left">
+                      <div className="text-[10px] font-black uppercase tracking-widest">Index Public Repo</div>
+                    </div>
+                    <ArrowRight size={14} className="ml-2 group-hover:translate-x-1 transition-transform" />
                   </button>
-                </div>
+                </>
               ) : (
                 <div className="flex flex-wrap gap-4">
                   <button 
