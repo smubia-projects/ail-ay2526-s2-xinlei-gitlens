@@ -45,7 +45,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = React.memo(({ data,
       svg.append("defs").append("marker")
         .attr("id", "arrowhead")
         .attr("viewBox", "-0 -5 10 10")
-        .attr("refX", 35) // Adjusted for wider nodes
+        .attr("refX", 10) 
         .attr("refY", 0)
         .attr("orient", "auto")
         .attr("markerWidth", 8)
@@ -65,6 +65,33 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = React.memo(({ data,
       // Run simulation to completion immediately
       for (let i = 0; i < 300; ++i) simulation.tick();
 
+      const nodeWidth = 200;
+      const nodeHeight = 50;
+
+      const getIntersection = (source: any, target: any) => {
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const halfW = nodeWidth / 2;
+        const halfH = nodeHeight / 2;
+
+        if (dx === 0 && dy === 0) return { x: target.x, y: target.y };
+
+        const slope = dy / dx;
+        const rectSlope = halfH / halfW;
+
+        if (Math.abs(slope) <= rectSlope) {
+          // Intersects with left or right side
+          const x = dx > 0 ? target.x - halfW : target.x + halfW;
+          const y = target.y - (dx > 0 ? halfW * slope : -halfW * slope);
+          return { x, y };
+        } else {
+          // Intersects with top or bottom side
+          const y = dy > 0 ? target.y - halfH : target.y + halfH;
+          const x = target.x - (dy > 0 ? halfH / slope : -halfH / slope);
+          return { x, y };
+        }
+      };
+
       const link = g.append("g")
         .selectAll("line")
         .data(data.links)
@@ -75,8 +102,8 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = React.memo(({ data,
         .attr("marker-end", "url(#arrowhead)")
         .attr("x1", (d: any) => d.source.x)
         .attr("y1", (d: any) => d.source.y)
-        .attr("x2", (d: any) => d.target.x)
-        .attr("y2", (d: any) => d.target.y);
+        .attr("x2", (d: any) => getIntersection(d.source, d.target).x)
+        .attr("y2", (d: any) => getIntersection(d.source, d.target).y);
 
       const node = g.append("g")
         .selectAll("g")
@@ -92,9 +119,6 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = React.memo(({ data,
           .on("start", dragstarted)
           .on("drag", dragged)
           .on("end", dragended) as any);
-
-      const nodeWidth = 200;
-      const nodeHeight = 50;
 
       node.append("rect")
         .attr("width", nodeWidth)
