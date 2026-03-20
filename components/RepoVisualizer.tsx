@@ -64,16 +64,16 @@ export const RepoVisualizer: React.FC<RepoVisualizerProps> = ({ files, onSelectF
           
           d3.select(event.currentTarget).select("circle")
             .transition().duration(200)
-            .attr("stroke", "#60a5fa")
+            .attr("stroke", "#ffffff")
             .attr("stroke-width", 3)
             .attr("fill-opacity", 0.8);
 
           tooltip.transition().duration(200).style("opacity", 1);
           tooltip.html(`
             <div class="flex flex-col gap-1">
-              <div class="text-blue-400 font-bold text-xs mono">${d.data.name}</div>
-              <div class="text-slate-500 text-[10px] mono break-all">${d.data.path || ''}</div>
-              ${d.children ? `<div class="text-slate-600 text-[9px] uppercase mt-1 font-bold tracking-tighter">${d.children.length} items</div>` : ''}
+              <div class="text-white font-bold text-xs mono">${d.data.name}</div>
+              <div class="text-neutral-500 text-[10px] mono break-all">${d.data.path || ''}</div>
+              ${d.children ? `<div class="text-neutral-600 text-[9px] uppercase mt-1 font-bold tracking-tighter">${d.children.length} items</div>` : ''}
             </div>
           `)
           .style("left", (event.pageX + 15) + "px")
@@ -86,7 +86,7 @@ export const RepoVisualizer: React.FC<RepoVisualizerProps> = ({ files, onSelectF
         .on("mouseout", (event, d: any) => {
           d3.select(event.currentTarget).select("circle")
             .transition().duration(200)
-            .attr("stroke", d.children ? "rgba(51, 65, 85, 0.5)" : "rgba(59, 130, 246, 0.5)")
+            .attr("stroke", d.children ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 255, 255, 0.3)")
             .attr("stroke-width", 1)
             .attr("fill-opacity", 0.4);
             
@@ -100,8 +100,8 @@ export const RepoVisualizer: React.FC<RepoVisualizerProps> = ({ files, onSelectF
 
       nodes.append("circle")
         .attr("r", d => d.r)
-        .attr("fill", d => d.children ? "rgba(15, 23, 42, 0.4)" : "rgba(37, 99, 235, 0.2)")
-        .attr("stroke", d => d.children ? "rgba(51, 65, 85, 0.5)" : "rgba(59, 130, 246, 0.5)")
+        .attr("fill", d => d.children ? "rgba(255, 255, 255, 0.05)" : "rgba(255, 255, 255, 0.1)")
+        .attr("stroke", d => d.children ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 255, 255, 0.3)")
         .attr("stroke-width", 1)
         .attr("fill-opacity", 0.4);
 
@@ -157,20 +157,20 @@ export const RepoVisualizer: React.FC<RepoVisualizerProps> = ({ files, onSelectF
   }, [files, onSelectFile]);
 
   return (
-    <div className="w-full h-full relative bg-slate-950 overflow-hidden">
+    <div className="w-full h-full relative bg-black overflow-hidden">
       <svg ref={svgRef} className="w-full h-full" />
       
       <div 
         ref={tooltipRef}
-        className="fixed pointer-events-none opacity-0 z-[1000] bg-slate-900/95 border border-slate-700 p-3 rounded-xl shadow-2xl backdrop-blur-md min-w-[150px] max-w-[300px]"
+        className="fixed pointer-events-none opacity-0 z-[1000] bg-neutral-950/95 border border-white/10 p-3 rounded-xl shadow-2xl backdrop-blur-md min-w-[150px] max-w-[300px]"
       />
 
       <div className="absolute bottom-4 left-4 flex flex-col gap-2">
-        <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-800 backdrop-blur-sm flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+        <div className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold bg-neutral-900/80 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-sm flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
           Interactive Repo Map
         </div>
-        <div className="text-[9px] text-slate-600 bg-slate-900/40 px-3 py-1 rounded-full border border-slate-800/50 backdrop-blur-sm">
+        <div className="text-[9px] text-neutral-600 bg-neutral-900/40 px-3 py-1 rounded-full border border-white/5 backdrop-blur-sm">
           Scroll to zoom • Drag to pan • Hover for details
         </div>
       </div>

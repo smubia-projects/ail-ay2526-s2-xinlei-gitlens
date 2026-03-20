@@ -27,24 +27,24 @@ class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-slate-900 border border-red-500/20 rounded-3xl p-8 text-center shadow-2xl">
+        <div className="min-h-screen bg-black flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-neutral-900 border border-red-500/20 rounded-3xl p-8 text-center shadow-2xl">
             <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <AlertTriangle className="text-red-500" size={32} />
             </div>
             <h2 className="text-2xl font-bold text-white mb-4">Something went wrong</h2>
-            <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+            <p className="text-neutral-400 text-sm mb-8 leading-relaxed">
               The application encountered an unexpected error. This might be due to a data parsing issue or a temporary service interruption.
             </p>
-            <div className="bg-slate-950/50 rounded-xl p-4 mb-8 text-left border border-slate-800">
-              <div className="text-[10px] font-bold text-slate-500 uppercase mb-2 tracking-widest">Error Details</div>
+            <div className="bg-neutral-950/50 rounded-xl p-4 mb-8 text-left border border-white/10">
+              <div className="text-[10px] font-bold text-neutral-500 uppercase mb-2 tracking-widest">Error Details</div>
               <div className="text-xs mono text-red-400/80 break-all">
                 {this.state.error?.message || 'Unknown error'}
               </div>
             </div>
             <button
               onClick={() => window.location.reload()}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
+              className="w-full py-4 bg-white hover:bg-neutral-200 text-black rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-white/20"
             >
               <RefreshCw size={18} />
               Reload Application

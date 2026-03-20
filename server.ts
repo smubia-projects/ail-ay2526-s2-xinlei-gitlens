@@ -38,13 +38,14 @@ async function startServer() {
   const PORT = 3000;
 
   // MongoDB Connection (Don't block server start)
-  // Using the exact URI that worked in the user's test script
-  const fallbackUri = `mongodb+srv://admin:%23mpAD$82OOq8@gitlens.di1vxwl.mongodb.net/gitlens?retryWrites=true&w=majority`;
-  const MONGODB_URI = process.env.MONGODB_URI || fallbackUri;
+  const MONGODB_URI = process.env.MONGODB_URI;
+  if (!MONGODB_URI) {
+    console.error("CRITICAL: MONGODB_URI environment variable is not set!");
+  }
   
-  const maskedUri = MONGODB_URI.replace(/:([^@]+)@/, ":****@");
+  const maskedUri = MONGODB_URI ? MONGODB_URI.replace(/:([^@]+)@/, ":****@") : "undefined";
   console.log(`Attempting to connect to MongoDB...`);
-  console.log(`Source: ${process.env.MONGODB_URI ? 'Environment Variable (MONGODB_URI)' : 'Fallback String'}`);
+  console.log(`Source: ${process.env.MONGODB_URI ? 'Environment Variable (MONGODB_URI)' : 'None'}`);
   console.log(`URI: ${maskedUri}`);
   
   mongoose.connection.on('connected', () => {

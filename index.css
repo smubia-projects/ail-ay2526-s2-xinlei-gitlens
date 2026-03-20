@@ -3,57 +3,100 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  /* Brand Colors */
+  --color-brand-primary: #6366f1; /* Indigo 500 */
+  --color-brand-secondary: #818cf8; /* Indigo 400 */
+  --color-brand-accent: #c084fc; /* Purple 400 */
+  
+  /* Neutral Palette */
+  --color-neutral-950: #0a0a0a;
+  --color-neutral-900: #171717;
+  --color-neutral-800: #262626;
+  --color-neutral-700: #404040;
+  --color-neutral-600: #525252;
+  --color-neutral-500: #737373;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-100: #f5f5f5;
+
+  --animate-shimmer: shimmer 8s infinite;
+}
+
+@keyframes shimmer {
+  0%, 90%, 100% { background-position: calc(-100% - var(--shimmer-width)) 0; }
+  30%, 60% { background-position: calc(100% + var(--shimmer-width)) 0; }
 }
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-100 antialiased;
+    @apply bg-neutral-950 text-neutral-100 antialiased selection:bg-brand-primary/30;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
   
   button, a, [role="button"], .clickable, .cursor-pointer {
-    @apply cursor-pointer transition-all duration-200;
-  }
-
-  button:hover, a:hover, [role="button"]:hover, .clickable:hover, .cursor-pointer:hover {
-    @apply opacity-80;
+    @apply cursor-pointer transition-all duration-300 ease-out;
   }
 
   button:active, a:active, [role="button"]:active, .clickable:active, .cursor-pointer:active {
-    @apply scale-95;
+    @apply scale-[0.98];
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-neutral-900/60 backdrop-blur-xl border border-white/5;
+  }
+  
+  .glass-dark {
+    @apply bg-black/40 backdrop-blur-2xl border border-white/10;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-br from-white via-neutral-200 to-neutral-500;
+  }
+
+  .brand-gradient {
+    @apply bg-gradient-to-br from-brand-primary to-brand-accent;
+  }
+
+  .brand-glow {
+    @apply shadow-[0_0_20px_rgba(99,102,241,0.2)];
+  }
+
+  .atmosphere {
+    background: 
+      radial-gradient(circle at 50% -20%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 0% 100%, rgba(192, 132, 252, 0.08) 0%, transparent 40%),
+      radial-gradient(circle at 100% 100%, rgba(99, 102, 241, 0.08) 0%, transparent 40%);
+    @apply bg-neutral-950;
   }
 }
 
 /* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  @apply bg-transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 10px;
+  @apply bg-neutral-800 rounded-full hover:bg-neutral-700 transition-colors;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #334155;
-}
-
-/* Prism Dark Theme Overrides */
+/* Prism Dark Theme Overrides - Refined */
 code[class*="language-"],
 pre[class*="language-"] {
-  color: #e2e8f0;
+  @apply text-neutral-200 font-mono text-left leading-relaxed;
   background: none;
-  font-family: var(--font-mono);
-  text-align: left;
   white-space: pre;
   word-spacing: normal;
   word-break: normal;
   word-wrap: normal;
-  line-height: 1.5;
   tab-size: 4;
   hyphens: none;
 }
@@ -62,15 +105,15 @@ pre[class*="language-"] {
 .token.prolog,
 .token.doctype,
 .token.cdata {
-  color: #64748b;
+  @apply text-neutral-500 italic;
 }
 
 .token.punctuation {
-  color: #94a3b8;
+  @apply text-neutral-400;
 }
 
 .token.namespace {
-  opacity: .7;
+  @apply opacity-70;
 }
 
 .token.property,
@@ -80,7 +123,7 @@ pre[class*="language-"] {
 .token.constant,
 .token.symbol,
 .token.deleted {
-  color: #f472b6;
+  @apply text-brand-accent;
 }
 
 .token.selector,
@@ -89,7 +132,7 @@ pre[class*="language-"] {
 .token.char,
 .token.builtin,
 .token.inserted {
-  color: #4ade80;
+  @apply text-emerald-400;
 }
 
 .token.operator,
@@ -97,22 +140,46 @@ pre[class*="language-"] {
 .token.url,
 .language-css .token.string,
 .style .token.string {
-  color: #94a3b8;
+  @apply text-neutral-400;
 }
 
 .token.atrule,
 .token.attr-value,
 .token.keyword {
-  color: #60a5fa;
+  @apply text-brand-secondary;
 }
 
 .token.function,
 .token.class-name {
-  color: #fbbf24;
+  @apply text-amber-400;
 }
 
 .token.regex,
 .token.important,
 .token.variable {
-  color: #f472b6;
+  @apply text-brand-accent;
+}
+
+.markdown-body {
+  @apply leading-relaxed text-neutral-300;
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  @apply text-white font-semibold tracking-tight mt-6 mb-4;
+}
+
+.markdown-body p {
+  @apply mb-4;
+}
+
+.markdown-body ul, .markdown-body ol {
+  @apply mb-4 pl-5 list-disc;
+}
+
+.markdown-body li {
+  @apply mb-1;
+}
+
+.markdown-body blockquote {
+  @apply border-l-2 border-brand-primary/50 pl-4 italic text-neutral-400 my-4;
 }

@@ -48,7 +48,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
         .attr("xoverflow", "visible")
         .append("svg:path")
         .attr("d", "M 0,-5 L 10 ,0 L 0,5")
-        .attr("fill", "#3b82f6") // Solid blue for better visibility
+        .attr("fill", "#ffffff") // Solid white for better visibility
         .style("stroke", "none");
 
       const simulation = d3.forceSimulation(data.nodes as any)
@@ -65,7 +65,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
         .data(data.links)
         .enter()
         .append("line")
-        .attr("stroke", "rgba(59, 130, 246, 0.4)")
+        .attr("stroke", "rgba(255, 255, 255, 0.2)")
         .attr("stroke-width", 2)
         .attr("marker-end", "url(#arrowhead)")
         .attr("x1", (d: any) => d.source.x)
@@ -94,8 +94,8 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
         .attr("x", -60)
         .attr("y", -20)
         .attr("rx", 8)
-        .attr("fill", d => d.type === 'file' ? "rgba(15, 23, 42, 0.9)" : "rgba(30, 41, 59, 0.9)")
-        .attr("stroke", d => d.type === 'file' ? "rgba(71, 85, 105, 0.5)" : "rgba(59, 130, 246, 0.5)")
+        .attr("fill", d => d.type === 'file' ? "rgba(255, 255, 255, 0.05)" : "rgba(255, 255, 255, 0.1)")
+        .attr("stroke", d => d.type === 'file' ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 255, 255, 0.2)")
         .attr("stroke-width", 1);
 
       node.append("text")
@@ -160,20 +160,20 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
   const hasSidebar = (data.usage_examples && data.usage_examples.length > 0) || data.call_flow_markdown;
 
   return (
-    <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl z-[100] flex flex-col animate-in fade-in duration-300">
-      <div className="h-14 border-b border-slate-800 flex items-center justify-between px-6 shrink-0">
+    <div className="absolute inset-0 bg-black/90 backdrop-blur-xl z-[100] flex flex-col animate-in fade-in duration-300">
+      <div className="h-14 border-b border-white/10 flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400">
+          <div className="p-2 bg-white/10 rounded-lg text-white">
             <Code2 size={18} />
           </div>
           <div className="flex flex-col">
             <span className="text-xs font-bold text-white uppercase tracking-widest">Logic Flow Visualizer</span>
-            <span className="text-[10px] text-slate-500 font-mono">Tracing cross-file dependencies and call hierarchy</span>
+            <span className="text-[10px] text-neutral-500 font-mono">Tracing cross-file dependencies and call hierarchy</span>
           </div>
         </div>
         <button 
           onClick={onClose}
-          className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400 hover:text-white"
+          className="p-2 hover:bg-white/10 rounded-full transition-colors text-neutral-400 hover:text-white"
         >
           <X size={20} />
         </button>
@@ -182,20 +182,20 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
         <div className="flex-1 relative">
           <svg ref={svgRef} className="w-full h-full" />
           <div className="absolute bottom-6 left-6 flex flex-col gap-2 pointer-events-none">
-            <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl backdrop-blur-md shadow-2xl">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Legend</div>
+            <div className="bg-neutral-900/80 border border-white/10 p-4 rounded-2xl backdrop-blur-md shadow-2xl">
+              <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-3">Legend</div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-blue-500/20 border border-blue-500/50" />
-                  <span className="text-[10px] text-slate-300">Function / Symbol</span>
+                  <div className="w-3 h-3 rounded bg-white/20 border border-white/50" />
+                  <span className="text-[10px] text-neutral-300">Function / Symbol</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-slate-800 border border-slate-700" />
-                  <span className="text-[10px] text-slate-300">File Reference</span>
+                  <div className="w-3 h-3 rounded bg-neutral-800 border border-white/10" />
+                  <span className="text-[10px] text-neutral-300">File Reference</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-[1px] bg-blue-500/30" />
-                  <span className="text-[10px] text-slate-300">Call / Dependency</span>
+                  <div className="w-6 h-[1px] bg-white/30" />
+                  <span className="text-[10px] text-neutral-300">Call / Dependency</span>
                 </div>
               </div>
             </div>
@@ -203,17 +203,17 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
         </div>
 
         {hasSidebar && (
-          <aside className="w-96 border-l border-slate-800 bg-slate-900/50 backdrop-blur-md flex flex-col overflow-hidden animate-in slide-in-from-right duration-500">
-            <div className="border-b border-slate-800 bg-slate-950/50 p-2 flex gap-1">
+          <aside className="w-96 border-l border-white/10 bg-neutral-900/50 backdrop-blur-md flex flex-col overflow-hidden animate-in slide-in-from-right duration-500">
+            <div className="border-b border-white/10 bg-neutral-950/50 p-2 flex gap-1">
               <button 
                 onClick={() => setSidebarTab('usages')}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${sidebarTab === 'usages' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:bg-slate-800'}`}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${sidebarTab === 'usages' ? 'bg-white text-black shadow-lg shadow-white/20' : 'text-neutral-500 hover:bg-white/10'}`}
               >
                 <Info size={14} /> Usages
               </button>
               <button 
                 onClick={() => setSidebarTab('trace')}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${sidebarTab === 'trace' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:bg-slate-800'}`}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${sidebarTab === 'trace' ? 'bg-white text-black shadow-lg shadow-white/20' : 'text-neutral-500 hover:bg-white/10'}`}
               >
                 <GitBranch size={14} /> Trace Map
               </button>
@@ -227,35 +227,35 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
                       <div 
                         key={i}
                         onClick={() => onNavigate(ex.file, ex.line)}
-                        className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl hover:border-blue-500/50 transition-all cursor-pointer group"
+                        className="bg-neutral-950/80 border border-white/10 p-4 rounded-2xl hover:border-white/50 transition-all cursor-pointer group"
                       >
                         <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2 text-blue-400">
+                          <div className="flex items-center gap-2 text-white">
                             <FileCode size={14} />
                             <span className="text-[11px] font-bold mono truncate max-w-[150px]">{(ex.file || '').split('/').pop()}</span>
                           </div>
-                          <span className="text-[10px] mono text-slate-600 font-bold">L{ex.line}</span>
+                          <span className="text-[10px] mono text-neutral-600 font-bold">L{ex.line}</span>
                         </div>
                         
                         <div className="space-y-3">
-                          <div className="bg-blue-500/5 border border-blue-500/10 p-2.5 rounded-xl">
-                            <div className="text-[9px] uppercase font-bold text-blue-400/70 mb-1">Invoked with</div>
-                            <div className="text-[11px] mono text-blue-300 break-all bg-slate-900/50 p-2 rounded-lg border border-slate-800/50">
+                          <div className="bg-white/5 border border-white/10 p-2.5 rounded-xl">
+                            <div className="text-[9px] uppercase font-bold text-white/70 mb-1">Invoked with</div>
+                            <div className="text-[11px] mono text-neutral-300 break-all bg-neutral-900/50 p-2 rounded-lg border border-white/10">
                               {ex.arguments}
                             </div>
                           </div>
-                          <p className="text-[11px] text-slate-400 leading-relaxed italic">
+                          <p className="text-[11px] text-neutral-400 leading-relaxed italic">
                             {ex.context_explanation}
                           </p>
                         </div>
                         
-                        <div className="mt-3 flex items-center justify-end text-[9px] font-bold text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="mt-3 flex items-center justify-end text-[9px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
                           View in file <ArrowRight size={10} className="ml-1" />
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="h-64 flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50">
+                    <div className="h-64 flex flex-col items-center justify-center text-neutral-700 gap-4 opacity-50">
                       <Info size={48} />
                       <p className="text-xs font-medium">No usage examples found</p>
                     </div>
@@ -264,11 +264,11 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
               ) : (
     <div className="animate-in fade-in duration-300">
       {data.call_flow_markdown ? (
-        <div className="bg-slate-950/80 border border-slate-800 p-6 rounded-2xl overflow-hidden shadow-inner">
-          <div className="text-[12px] text-blue-400 uppercase font-black mb-6 flex items-center gap-2 tracking-[0.2em] border-b border-blue-500/20 pb-3">
-            <Network size={16} className="text-blue-500" /> Call Hierarchy & Logic Trace
+        <div className="bg-neutral-950/80 border border-white/10 p-6 rounded-2xl overflow-hidden shadow-inner">
+          <div className="text-[12px] text-white uppercase font-black mb-6 flex items-center gap-2 tracking-[0.2em] border-b border-white/20 pb-3">
+            <Network size={16} className="text-white" /> Call Hierarchy & Logic Trace
           </div>
-          <div className="text-[12px] leading-relaxed pl-3 border-l border-blue-500/30 overflow-x-auto">
+          <div className="text-[12px] leading-relaxed pl-3 border-l border-white/30 overflow-x-auto">
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
               components={{
@@ -278,9 +278,9 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
                   
                   if (isMermaid) {
                     return (
-                      <div className="my-4 p-3 bg-blue-500/5 border border-dashed border-blue-500/20 rounded-xl relative overflow-x-auto">
-                        <div className="absolute top-1.5 right-2.5 text-[7px] font-black text-blue-500/30 uppercase tracking-widest">Logic Flow Map</div>
-                        <code className="block font-mono text-[10px] text-blue-200 whitespace-pre leading-relaxed">
+                      <div className="my-4 p-3 bg-white/5 border border-dashed border-white/20 rounded-xl relative overflow-x-auto">
+                        <div className="absolute top-1.5 right-2.5 text-[7px] font-black text-white/30 uppercase tracking-widest">Logic Flow Map</div>
+                        <code className="block font-mono text-[10px] text-neutral-200 whitespace-pre leading-relaxed">
                           {content}
                         </code>
                       </div>
@@ -289,20 +289,20 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
 
                   if (content.startsWith('[STEP')) {
                     return (
-                      <div className="mt-8 mb-3 text-blue-400 font-black uppercase tracking-tight text-[14px] border-b border-blue-500/20 pb-2 flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                      <div className="mt-8 mb-3 text-white font-black uppercase tracking-tight text-[14px] border-b border-white/20 pb-2 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
                         {children}
                       </div>
                     );
                   }
                   if (content.includes('Step-by-Step Breakdown')) {
                     return (
-                      <div className="text-[15px] font-black text-white mt-10 mb-6 border-b-2 border-slate-800 pb-3 uppercase tracking-widest">
+                      <div className="text-[15px] font-black text-white mt-10 mb-6 border-b-2 border-white/10 pb-3 uppercase tracking-widest">
                         {children}
                       </div>
                     );
                   }
-                  return <div className="mb-3 last:mb-0 text-slate-300">{children}</div>;
+                  return <div className="mb-3 last:mb-0 text-neutral-300">{children}</div>;
                 },
                 ul({ children }) {
                   return <ul className="space-y-4 my-4">{children}</ul>;
@@ -317,7 +317,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
                   if (isLabel) {
                     return (
                       <div className="mt-2 first:mt-0">
-                        <span className="text-blue-400/80 font-bold mr-1 uppercase text-[9px] tracking-wider">{cleanLabel}:</span>
+                        <span className="text-white/80 font-bold mr-1 uppercase text-[9px] tracking-wider">{cleanLabel}:</span>
                       </div>
                     );
                   }
@@ -329,7 +329,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
 
                   if (inline) {
                     return (
-                      <code className="bg-slate-800/50 px-1.5 py-0.5 rounded text-blue-300 font-mono text-[11px] border border-slate-700/30" {...props}>
+                      <code className="bg-neutral-800/50 px-1.5 py-0.5 rounded text-neutral-300 font-mono text-[11px] border border-white/10" {...props}>
                         {children}
                       </code>
                     );
@@ -337,9 +337,9 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
 
                   if (isMermaid) {
                     return (
-                      <div className="my-4 p-3 bg-blue-500/5 border border-dashed border-blue-500/20 rounded-xl relative overflow-x-auto">
-                        <div className="absolute top-1.5 right-2.5 text-[7px] font-black text-blue-500/30 uppercase tracking-widest">Logic Flow Map</div>
-                        <code className="block font-mono text-[10px] text-blue-200 whitespace-pre leading-relaxed" {...props}>
+                      <div className="my-4 p-3 bg-white/5 border border-dashed border-white/20 rounded-xl relative overflow-x-auto">
+                        <div className="absolute top-1.5 right-2.5 text-[7px] font-black text-white/30 uppercase tracking-widest">Logic Flow Map</div>
+                        <code className="block font-mono text-[10px] text-neutral-200 whitespace-pre leading-relaxed" {...props}>
                           {children}
                         </code>
                       </div>
@@ -348,7 +348,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
 
                   return (
                     <span className="inline-block overflow-x-auto max-w-full my-0.5 align-middle">
-                      <code className="inline-block bg-slate-900/80 px-2 py-0.5 rounded-md border border-slate-800 text-blue-200 whitespace-pre font-mono text-[11px] leading-tight" {...props}>
+                      <code className="inline-block bg-neutral-900/80 px-2 py-0.5 rounded-md border border-white/10 text-neutral-200 whitespace-pre font-mono text-[11px] leading-tight" {...props}>
                         {children}
                       </code>
                     </span>
@@ -361,7 +361,7 @@ export const FlowVisualizer: React.FC<FlowVisualizerProps> = ({ data, onClose, o
           </div>
         </div>
       ) : (
-                    <div className="h-64 flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50">
+                    <div className="h-64 flex flex-col items-center justify-center text-neutral-700 gap-4 opacity-50">
                       <GitBranch size={48} />
                       <p className="text-xs font-medium">No trace map generated</p>
                     </div>

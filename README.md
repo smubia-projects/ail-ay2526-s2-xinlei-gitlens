@@ -9,6 +9,8 @@ GitLens Cursor AI Code Visualizer combines high-performance repository explorati
 ## ✨ Implemented Features
 
 ### 🔍 AI-Powered Exploration
+- **Private Repository Support**: Full GitHub OAuth flow for secure access to private repositories.
+- **Persistent User History**: User authentication to save indexed repositories and custom analysis notes.
 - **Semantic Search (RAG)**: Automatically chunks and embeds code using `gemini-embedding-001`. Relevant snippets are retrieved using MongoDB Atlas Vector Search to provide the AI with precise context.
 - **Deep Code Analysis**: Uses Gemini 3.1 Pro for complex reasoning and **Gemini 3 Flash** for high-speed interactions.
 - **Resilient AI Layer**: Built-in timeout handling (45s), exponential backoff for 503 errors, and automatic response sanitization.
@@ -36,12 +38,10 @@ GitLens Cursor AI Code Visualizer combines high-performance repository explorati
 
 ## 📋 TODOs & Future Improvements
 
-- [ ] **Private Repository Support**: Implement full OAuth flow for secure access to private GitHub/GitLab repos.
 - [ ] **AST-Aware Chunking**: Move from fixed-size chunking to Abstract Syntax Tree (AST) aware chunking for superior semantic retrieval.
 - [ ] **AI-Driven Refactoring**: Enable the AI to suggest and apply multi-file refactoring changes directly.
 - [ ] **Code Complexity Heatmaps**: Visualize "hot spots" in the codebase based on cyclomatic complexity or churn.
 - [ ] **Local Codebase Support**: Add support for analyzing local directories via file system API or secure uploads.
-- [ ] **Persistent User History**: Add user authentication to save chat history, indexed repositories, and custom analysis notes.
 
 ## 🚦 Getting Started
 

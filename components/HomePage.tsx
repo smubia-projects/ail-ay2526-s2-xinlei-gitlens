@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Github, Search, Activity, Calendar, ArrowRight, Trash2, RefreshCw, GitBranch, Sparkles, AlertTriangle, Clock, ShieldCheck, Settings } from 'lucide-react';
+import { Github, Search, Activity, Calendar, ArrowRight, Trash2, RefreshCw, GitBranch, Sparkles, AlertTriangle, Clock, ShieldCheck, Settings, Loader2, Plus, Folder } from 'lucide-react';
 import { RepoStats, RepoOverview, AIConfig } from '../types';
 import { embedText, setAIConfig } from '../services/gemini';
 import { SettingsModal } from './SettingsModal';
+import { AnimatedShinyText } from './ui/AnimatedShinyText';
+import { MagicCard } from './ui/MagicCard';
 
 interface IndexedRepo {
   owner: string;
@@ -209,98 +211,104 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-8">
-      <div className="max-w-6xl mx-auto space-y-12">
+    <div className="relative min-h-screen atmosphere text-neutral-200 p-8 overflow-hidden">
+      <div className="relative z-10 max-w-6xl mx-auto space-y-12">
         
         {/* Hero Section */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-slate-800 pb-12">
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 text-blue-400">
-              <Activity size={32} className="animate-pulse" />
-              <span className="text-sm font-black uppercase tracking-[0.3em]">GitLens Cursor</span>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-12 border-b border-white/5 pb-16 pt-8">
+          <div className="space-y-6 flex-1">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-brand-primary/10 rounded-xl border border-brand-primary/20">
+                <Activity size={24} className="text-brand-primary animate-pulse" />
+              </div>
+              <AnimatedShinyText className="text-[10px] font-black uppercase tracking-[0.4em] m-0 text-neutral-500">
+                GitLens Cursor • v1.0
+              </AnimatedShinyText>
             </div>
-            <h1 className="text-6xl font-black text-white tracking-tighter uppercase leading-none">
-              Indexed <br /> <span className="text-blue-500">Repositories</span>
+            <h1 className="text-7xl font-black text-white tracking-tighter uppercase leading-[0.9] text-gradient">
+              Codebase <br /> <span className="text-white/40">Intelligence</span>
             </h1>
-            <p className="text-slate-400 max-w-md text-lg leading-relaxed">
-              Your personal library of analyzed codebases. Instant access to architecture, logic flows, and deep insights.
+            <p className="text-neutral-500 max-w-lg text-lg leading-relaxed font-medium">
+              Your personal library of analyzed codebases. Instant access to architecture, logic flows, and deep semantic insights powered by Gemini.
             </p>
             
-            <div className="pt-4">
+            <div className="pt-6">
               {githubUser ? (
-                <div className="flex items-center gap-4 p-4 bg-slate-900 border border-slate-800 rounded-[2rem] w-fit">
+                <div className="flex items-center gap-5 p-2 pr-6 bg-neutral-900/50 backdrop-blur-xl border border-white/5 rounded-full w-fit group hover:border-white/10 transition-all">
                   <img 
                     src={githubUser.avatar_url} 
                     alt={githubUser.login} 
-                    className="h-12 w-12 rounded-full border-2 border-blue-500/50 shadow-lg shadow-blue-500/10"
+                    className="h-12 w-12 rounded-full border border-white/10 shadow-2xl group-hover:scale-105 transition-transform"
                     referrerPolicy="no-referrer"
                   />
-                  <div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Connected as</div>
-                    <div className="text-lg font-black text-white leading-tight">{githubUser.login}</div>
-                    <button 
-                      onClick={onLogoutGitHub}
-                      className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-400 font-bold uppercase tracking-widest mt-1 transition-colors group/logout"
-                    >
-                      Logout
-                      <ArrowRight size={10} className="group-hover/logout:translate-x-0.5 transition-transform" />
-                    </button>
+                  <div className="flex flex-col">
+                    <div className="text-[9px] font-bold text-neutral-600 uppercase tracking-widest">Authenticated</div>
+                    <div className="text-base font-bold text-white leading-tight">{githubUser.login}</div>
                   </div>
+                  <div className="h-8 w-[1px] bg-white/5 mx-2" />
+                  <button 
+                    onClick={onLogoutGitHub}
+                    className="text-[10px] text-neutral-500 hover:text-red-400 font-bold uppercase tracking-widest transition-colors"
+                  >
+                    Disconnect
+                  </button>
                 </div>
               ) : (
                 <button 
                   onClick={onConnectGitHub}
-                  className="flex items-center gap-3 px-6 py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-[2rem] border border-slate-800 hover:border-blue-500/30 transition-all shadow-xl group"
+                  className="flex items-center gap-4 px-8 py-5 bg-white hover:bg-neutral-200 text-black rounded-2xl transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)] group active:scale-95"
                 >
-                  <div className="p-2 bg-slate-800 rounded-xl group-hover:text-blue-400 transition-colors">
-                    <Github size={20} />
-                  </div>
+                  <Github size={20} />
                   <div className="text-left">
-                    <div className="text-xs font-bold uppercase tracking-widest">Connect GitHub</div>
-                    <div className="text-[10px] text-slate-500">Access your private repositories</div>
+                    <div className="text-xs font-black uppercase tracking-widest">Connect GitHub</div>
+                    <div className="text-[10px] opacity-60">Unlock private repository indexing</div>
                   </div>
+                  <ArrowRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" />
                 </button>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            {indexStatus && indexStatus.includes("Warning") && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-[10px] font-bold uppercase tracking-widest animate-pulse">
-                <AlertTriangle size={12} />
-                Vector Index Missing
-              </div>
-            )}
-            <button 
-              onClick={onOpenSettings}
-              className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-blue-400 hover:border-blue-500/30 transition-all"
-              title="AI Settings"
-            >
-              <Settings size={20} />
-            </button>
-            <button 
-              onClick={() => fetchRepos()}
-              className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-blue-400 hover:border-blue-500/30 transition-all"
-              title="Refresh Index"
-            >
-              <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
-            </button>
-            <form onSubmit={handleSearch} className="relative flex items-center gap-2">
-              <div className="relative w-full md:w-96">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
+          <div className="flex flex-col gap-6 w-full md:w-auto">
+            <div className="flex items-center justify-end gap-3">
+              {indexStatus && indexStatus.includes("Warning") && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/5 border border-amber-500/10 rounded-full text-amber-500/80 text-[9px] font-bold uppercase tracking-widest">
+                  <AlertTriangle size={12} />
+                  Vector Index Optimization Required
+                </div>
+              )}
+              <button 
+                onClick={onOpenSettings}
+                className="p-4 bg-neutral-900/50 border border-white/5 rounded-2xl text-neutral-500 hover:text-white hover:border-white/20 transition-all glass hover:brand-glow"
+                title="AI Settings"
+              >
+                <Settings size={20} />
+              </button>
+              <button 
+                onClick={() => fetchRepos()}
+                className="p-4 bg-neutral-900/50 border border-white/5 rounded-2xl text-neutral-500 hover:text-white hover:border-white/20 transition-all glass"
+                title="Refresh Index"
+              >
+                <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSearch} className="relative flex items-center gap-3">
+              <div className="relative w-full md:w-[440px] group">
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-neutral-600 group-focus-within:text-brand-primary transition-colors" size={20} />
                 <input 
                   type="text" 
-                  placeholder={isSemantic ? "Describe what you're looking for..." : "Search your index..."}
+                  placeholder={isSemantic ? "Search by concept (e.g. 'auth flow', 'database logic')..." : "Filter indexed repositories..."}
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
                     if (!e.target.value) setSemanticResults(null);
                   }}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-white placeholder:text-slate-600"
+                  className="w-full bg-neutral-900/50 border border-white/5 rounded-2xl py-5 pl-14 pr-6 focus:outline-none focus:border-brand-primary/50 focus:ring-4 focus:ring-brand-primary/10 transition-all text-white placeholder:text-neutral-700 text-sm font-medium glass"
                 />
                 {isSearching && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                    <RefreshCw size={16} className="animate-spin text-blue-500" />
+                  <div className="absolute right-5 top-1/2 -translate-y-1/2">
+                    <Loader2 size={18} className="animate-spin text-brand-primary" />
                   </div>
                 )}
               </div>
@@ -310,31 +318,37 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                   setIsSemantic(!isSemantic);
                   setSemanticResults(null);
                 }}
-                className={`p-4 rounded-2xl border transition-all flex items-center gap-2 font-bold text-xs uppercase tracking-widest ${
+                className={`p-5 rounded-2xl border transition-all flex items-center gap-3 font-bold text-[10px] uppercase tracking-[0.2em] glass ${
                   isSemantic 
-                    ? "bg-blue-500/20 border-blue-500/50 text-blue-400 shadow-lg shadow-blue-500/10" 
-                    : "bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700"
+                    ? "bg-brand-primary/10 border-brand-primary/50 text-brand-primary shadow-lg shadow-brand-primary/10" 
+                    : "text-neutral-500 hover:border-white/20"
                 }`}
               >
-                <Sparkles size={16} className={isSemantic ? "animate-pulse" : ""} />
-                <span className="hidden md:inline">Semantic</span>
+                <Sparkles size={18} className={isSemantic ? "animate-pulse" : ""} />
+                <span className="hidden lg:inline">Semantic</span>
               </button>
             </form>
           </div>
         </div>
 
         {dbError && (
-          <div className="bg-red-500/10 border border-red-500/20 p-6 rounded-[2rem] flex flex-col gap-3 animate-in fade-in slide-in-from-top-4">
-            <div className="flex items-center gap-3 text-red-400 font-bold uppercase tracking-widest text-xs">
-              <RefreshCw size={16} className="animate-spin" /> Database Connection Issue
+          <div className="bg-red-500/5 border border-red-500/10 p-8 rounded-[2.5rem] flex flex-col gap-6 animate-in fade-in slide-in-from-top-4 glass">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-red-500/10 rounded-2xl border border-red-500/20">
+                <AlertTriangle size={24} className="text-red-500" />
+              </div>
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500/60 mb-1">System Alert</div>
+                <h3 className="text-xl font-black text-white uppercase tracking-tighter">Database Connection Issue</h3>
+              </div>
             </div>
-            <p className="text-slate-300 text-sm font-mono bg-slate-950/50 p-4 rounded-xl border border-red-500/10">
+            <p className="text-neutral-400 text-sm font-mono bg-black/40 p-5 rounded-2xl border border-white/5 leading-relaxed">
               {dbError}
             </p>
             <div className="flex gap-4">
               <button 
                 onClick={() => fetchRepos()}
-                className="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
+                className="bg-white hover:bg-neutral-200 text-black px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
               >
                 Retry Connection
               </button>
@@ -342,7 +356,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                 href="https://cloud.mongodb.com" 
                 target="_blank" 
                 rel="noreferrer"
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
+                className="bg-neutral-900 border border-white/5 hover:border-white/20 text-neutral-400 hover:text-white px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all glass"
               >
                 Check Atlas Status
               </a>
@@ -350,189 +364,171 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex items-center gap-8 border-b border-slate-800">
-          <button 
-            onClick={() => setActiveTab('indexed')}
-            className={`pb-4 text-sm font-bold uppercase tracking-[0.2em] transition-all relative ${
-              activeTab === 'indexed' ? 'text-blue-500' : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Indexed Repositories
-            {activeTab === 'indexed' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 animate-in fade-in slide-in-from-left-2" />}
-          </button>
-          {githubUser && (
+        {/* Tabs Section */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+          <div className="flex p-1.5 bg-neutral-900/80 border border-white/5 rounded-2xl glass">
             <button 
-              onClick={() => setActiveTab('github')}
-              className={`pb-4 text-sm font-bold uppercase tracking-[0.2em] transition-all relative ${
-                activeTab === 'github' ? 'text-blue-500' : 'text-slate-500 hover:text-slate-300'
+              onClick={() => setActiveTab('indexed')}
+              className={`px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
+                activeTab === 'indexed' 
+                  ? 'bg-white text-black shadow-xl scale-100' 
+                  : 'text-neutral-500 hover:text-white'
               }`}
             >
-              My GitHub Repos
-              {activeTab === 'github' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 animate-in fade-in slide-in-from-left-2" />}
+              Analyzed
             </button>
-          )}
+            <button 
+              onClick={() => setActiveTab('github')}
+              className={`px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
+                activeTab === 'github' 
+                  ? 'bg-white text-black shadow-xl scale-100' 
+                  : 'text-neutral-500 hover:text-white'
+              }`}
+            >
+              GitHub
+            </button>
+          </div>
+          
+          <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-neutral-600">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-brand-primary animate-pulse" />
+              {displayRepos.length} Analyzed
+            </div>
+            <div className="h-4 w-[1px] bg-white/5" />
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-neutral-700" />
+              {userRepos.length} Available
+            </div>
+          </div>
         </div>
 
         {/* Grid */}
         {activeTab === 'indexed' ? (
           <>
             {isLoading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {[1, 2, 3].map(i => (
-                  <div key={i} className="h-64 bg-slate-900/50 rounded-[2rem] border border-slate-800 animate-pulse" />
+                  <div key={i} className="h-[400px] bg-neutral-900/20 rounded-[2.5rem] border border-white/5 animate-pulse glass" />
                 ))}
               </div>
             ) : displayRepos.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {/* Add New Project Card */}
+                <MagicCard 
+                  onClick={() => setActiveTab('github')}
+                  className="flex flex-col items-center justify-center p-12 border-dashed border-2 border-white/5 hover:border-brand-primary/30 group cursor-pointer min-h-[320px] bg-neutral-900/20 transition-all glass"
+                >
+                  <div className="p-6 bg-neutral-900 border border-white/5 rounded-[2.5rem] group-hover:scale-110 group-hover:brand-glow transition-all duration-500">
+                    <Plus size={40} className="text-neutral-600 group-hover:text-brand-primary transition-colors" />
+                  </div>
+                  <div className="mt-8 text-center">
+                    <h3 className="text-lg font-black text-white uppercase tracking-tighter">Index New Repository</h3>
+                    <p className="text-neutral-500 text-xs mt-2 font-medium">Connect your GitHub to start analyzing</p>
+                  </div>
+                </MagicCard>
+
                 {displayRepos.map((repo, i) => {
                   const repoId = `${repo.owner}/${repo.name}/${repo.branch}`;
                   const isDeleting = deletingRepo === repoId;
                   const isConfirming = confirmDelete === repoId;
 
                   return (
-                    <div 
+                    <MagicCard 
                       key={i}
                       onClick={() => !isDeleting && !isConfirming && onSelectRepo(repo.owner, repo.name, repo.branch)}
-                      className={`group relative bg-slate-900/40 border p-8 rounded-[2.5rem] transition-all cursor-pointer flex flex-col justify-between h-80 overflow-hidden ${
+                      className={`group relative border rounded-[2.5rem] transition-all cursor-pointer flex flex-col justify-between h-[400px] overflow-hidden glass ${
                         isDeleting ? 'opacity-50 grayscale pointer-events-none' : 
-                        isConfirming ? 'border-red-500/50 bg-red-500/5' : 'border-slate-800 hover:bg-slate-900 hover:border-blue-500/30'
+                        isConfirming ? 'border-red-500/50 bg-red-500/5' : 'border-white/5 hover:border-white/10'
                       }`}
                     >
-                      {/* Background Accent */}
-                      <div className="absolute -right-10 -top-10 w-40 h-40 bg-blue-500/5 rounded-full blur-3xl group-hover:bg-blue-500/10 transition-colors" />
-                      
-                      {repo.score && (
-                        <div className="absolute top-4 right-4 bg-blue-500/10 text-blue-400 px-2 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border border-blue-500/20">
-                          Match: {Math.round(repo.score * 100)}%
-                        </div>
-                      )}
-
-                      {repo.isTemporary && (
-                        <div className="absolute top-4 left-4 bg-amber-500/10 text-amber-400 px-2 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border border-amber-500/20 flex items-center gap-1">
-                          <Clock size={10} />
-                          Temporary
-                        </div>
-                      )}
-
-                      {repo.isPrivate && (
-                        <div className={`absolute top-4 ${repo.githubUserId === githubUser?.id ? 'left-20' : 'left-4'} bg-red-500/10 text-red-400 px-2 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border border-red-500/20 flex items-center gap-1`}>
-                          <ShieldCheck size={10} />
-                          Private
-                        </div>
-                      )}
-
-                      {repo.githubUserId && repo.githubUserId === githubUser?.id && (
-                        <div className="absolute top-4 left-4 bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border border-emerald-500/20 flex items-center gap-1">
-                          <ShieldCheck size={10} />
-                          Owned
-                        </div>
-                      )}
-                      
-                      <div className="relative space-y-4">
-                        <div className="flex items-start justify-between">
-                          <div className={`p-3 rounded-2xl transition-all ${
-                            isConfirming ? 'bg-red-500/20 text-red-400' : 'bg-slate-800 text-slate-400 group-hover:text-blue-400 group-hover:bg-blue-500/10'
+                      <div className="p-8 flex flex-col h-full">
+                        <div className="flex justify-between items-start mb-8">
+                          <div className={`p-4 rounded-2xl border transition-all duration-500 ${
+                            isConfirming ? 'bg-red-500/20 text-red-400 border-red-500/30' : 
+                            repo.isTemporary ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 
+                            'bg-brand-primary/10 border-brand-primary/20 text-brand-primary'
                           }`}>
-                            {isDeleting ? <RefreshCw size={24} className="animate-spin" /> : <Github size={24} />}
+                            {isDeleting ? <RefreshCw size={24} className="animate-spin" /> : <Folder size={24} />}
                           </div>
-                          <button 
-                            onClick={(e) => handleDelete(e, repo.owner, repo.name, repo.branch)}
-                            className={`p-3 rounded-2xl transition-all z-50 ${
-                              isConfirming ? 'bg-red-500 text-white scale-110 shadow-lg shadow-red-500/30' : 'bg-slate-800/50 text-slate-500 hover:text-red-400 hover:bg-red-500/10'
-                            }`}
-                            title={isConfirming ? "Click again to confirm" : "Delete from index"}
-                          >
-                            {isConfirming ? <Trash2 size={24} /> : <Trash2 size={20} />}
-                          </button>
+                          <div className="flex gap-2">
+                            {repo.isPrivate && (
+                              <div className="px-3 py-1 bg-neutral-900 border border-white/5 rounded-full text-[9px] font-black uppercase tracking-widest text-neutral-500">
+                                Private
+                              </div>
+                            )}
+                            {repo.isTemporary && (
+                              <div className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-[9px] font-black uppercase tracking-widest text-amber-500">
+                                Temp
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        
-                        <div>
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{repo.owner}</div>
-                          <h2 className={`text-2xl font-black tracking-tight uppercase transition-colors truncate ${
-                            isConfirming ? 'text-red-400' : 'text-white group-hover:text-blue-400'
-                          }`}>
+
+                        <div className="flex-1 space-y-3">
+                          <div className="text-[10px] font-bold text-neutral-600 uppercase tracking-widest">{repo.owner}</div>
+                          <h3 className="text-2xl font-black text-white tracking-tighter uppercase group-hover:text-brand-primary transition-colors truncate">
                             {repo.name}
-                          </h2>
-                          <div className="flex items-center gap-1.5 mt-2 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                          </h3>
+                          <div className="flex items-center gap-2 text-neutral-500 font-bold text-[10px] uppercase tracking-widest">
                             <GitBranch size={12} />
                             {repo.branch}
                           </div>
+                          
+                          <div className="grid grid-cols-3 gap-4 pt-6">
+                            <div className="space-y-1">
+                              <div className="text-lg font-bold text-white mono leading-none">{repo.stats.fileCount}</div>
+                              <div className="text-[8px] font-bold text-neutral-600 uppercase tracking-widest">Files</div>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="text-lg font-bold text-white mono leading-none">{repo.stats.languages.length}</div>
+                              <div className="text-[8px] font-bold text-neutral-600 uppercase tracking-widest">Langs</div>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="text-lg font-bold text-white mono leading-none">{Math.round(repo.stats.totalLines / 1000)}k</div>
+                              <div className="text-[8px] font-bold text-neutral-600 uppercase tracking-widest">Lines</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-8 flex items-center gap-3">
+                          <button 
+                            className="flex-1 bg-white hover:bg-neutral-200 text-black py-4 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all active:scale-95"
+                          >
+                            Launch Inspector
+                          </button>
+                          
+                          <button 
+                            onClick={(e) => handleDelete(e, repo.owner, repo.name, repo.branch)}
+                            className={`p-4 rounded-xl transition-all z-50 ${
+                              isConfirming ? 'bg-red-500 text-white scale-110 shadow-lg shadow-red-500/30' : 'bg-neutral-900/50 text-neutral-600 hover:text-red-500 hover:border-red-500/30 border border-white/5 opacity-0 group-hover:opacity-100'
+                            }`}
+                          >
+                            <Trash2 size={20} />
+                          </button>
                         </div>
                       </div>
 
                       {isConfirming && (
                         <div className="absolute inset-x-0 bottom-0 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest py-2 text-center animate-in slide-in-from-bottom-full">
-                          Click trash again to confirm delete
+                          Click again to confirm delete
                         </div>
                       )}
-
-                      <div className={`relative space-y-6 transition-opacity ${isConfirming ? 'opacity-20' : 'opacity-100'}`}>
-                        <div className="grid grid-cols-3 gap-4 border-t border-slate-800/50 pt-6">
-                          <div className="space-y-1">
-                            <div className="text-lg font-bold text-white mono leading-none">{repo.stats.fileCount}</div>
-                            <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Files</div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="text-lg font-bold text-white mono leading-none">{repo.stats.languages.length}</div>
-                            <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Langs</div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="text-lg font-bold text-white mono leading-none">{Math.round(repo.stats.totalLines / 1000)}k</div>
-                            <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Lines</div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                          <div className="flex items-center gap-2">
-                            <Calendar size={12} />
-                            {new Date(repo.lastIndexed).toLocaleDateString()}
-                          </div>
-                          {repo.isTemporary && repo.expiresAt && (
-                            <div className="flex items-center gap-1 text-amber-500/70">
-                              <Clock size={10} />
-                              Expires {new Date(repo.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          )}
-                          <div className="flex items-center gap-1 text-blue-500 group-hover:translate-x-1 transition-transform">
-                            Open <ArrowRight size={12} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    </MagicCard>
                   );
                 })}
-                
-                {/* Add New Project Card */}
-                <div 
-                  onClick={() => onSelectRepo('', '', '')}
-                  className="group border-2 border-dashed border-slate-800 p-8 rounded-[2.5rem] hover:border-blue-500/50 hover:bg-blue-500/5 transition-all cursor-pointer flex flex-col items-center justify-center gap-4 h-80"
-                >
-                  <div className="p-4 bg-slate-900 rounded-full text-slate-500 group-hover:text-blue-400 group-hover:scale-110 transition-all">
-                    <Github size={32} />
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm font-bold text-white uppercase tracking-widest">
-                      {githubUser ? 'Index New Repository' : 'Connect GitHub First'}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      {githubUser ? 'Paste a GitHub URL to start' : 'Required to access private repos'}
-                    </div>
-                  </div>
-                </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-20 space-y-6">
-                <div className="p-8 bg-slate-900 rounded-full text-slate-700">
+              <div className="flex flex-col items-center justify-center py-32 space-y-8 glass rounded-[3rem] border border-white/5">
+                <div className="p-10 bg-neutral-900 border border-white/5 rounded-full text-neutral-700 shadow-2xl">
                   <Github size={64} />
                 </div>
-                <div className="text-center space-y-2">
-                  <h3 className="text-2xl font-bold text-white">No repositories indexed yet</h3>
-                  <p className="text-slate-500">Start by indexing your first project from GitHub.</p>
+                <div className="text-center space-y-3">
+                  <h3 className="text-3xl font-black text-white uppercase tracking-tighter">No repositories indexed</h3>
+                  <p className="text-neutral-500 max-w-xs mx-auto font-medium">Start by indexing your first project from GitHub to unlock deep analysis.</p>
                 </div>
                 <button 
-                  onClick={() => githubUser ? onSelectRepo('', '', '') : onConnectGitHub()}
-                  className="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-blue-500/20 active:scale-95"
+                  onClick={() => githubUser ? setActiveTab('github') : onConnectGitHub()}
+                  className="px-10 py-5 bg-white hover:bg-neutral-200 text-black font-black rounded-2xl transition-all shadow-xl active:scale-95 uppercase text-[10px] tracking-widest"
                 >
                   {githubUser ? 'Index Repository' : 'Connect GitHub'}
                 </button>
@@ -540,15 +536,18 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
             )}
           </>
         ) : (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Available Repositories</h3>
+          <div className="space-y-10">
+            <div className="flex items-center justify-between border-b border-white/5 pb-6">
+              <div>
+                <h3 className="text-xl font-black text-white uppercase tracking-tighter">Available Repositories</h3>
+                <p className="text-neutral-500 text-[10px] font-bold uppercase tracking-widest mt-1">Select a repository to begin indexing</p>
+              </div>
               <button 
                 onClick={fetchUserRepos}
                 disabled={isLoadingUserRepos}
-                className="flex items-center gap-2 text-[10px] font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest transition-colors disabled:opacity-50"
+                className="flex items-center gap-3 px-6 py-3 bg-neutral-900/50 border border-white/5 rounded-xl text-[10px] font-black text-neutral-400 hover:text-white hover:border-white/20 uppercase tracking-widest transition-all disabled:opacity-50 glass"
               >
-                <RefreshCw size={12} className={isLoadingUserRepos ? 'animate-spin' : ''} />
+                <RefreshCw size={14} className={isLoadingUserRepos ? 'animate-spin' : ''} />
                 Refresh List
               </button>
             </div>
@@ -558,7 +557,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                 <div className="flex items-center gap-3 text-red-400 font-bold uppercase tracking-widest text-xs">
                   <AlertTriangle size={16} /> Failed to load GitHub repositories
                 </div>
-                <p className="text-slate-300 text-sm font-mono bg-slate-950/50 p-4 rounded-xl border border-red-500/10">
+                <p className="text-neutral-300 text-sm font-mono bg-neutral-950/50 p-4 rounded-xl border border-red-500/10">
                   {userReposError}
                 </p>
                 <button 
@@ -571,13 +570,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
             )}
 
             {isLoadingUserRepos ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[1, 2, 3, 4, 5, 6].map(i => (
-                  <div key={i} className="h-40 bg-slate-900/50 rounded-3xl border border-slate-800 animate-pulse" />
+                  <div key={i} className="h-44 bg-neutral-900/40 rounded-2xl border border-white/5 animate-pulse relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent" />
+                  </div>
                 ))}
               </div>
             ) : userRepos.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {userRepos.map((repo, i) => {
                   const isIndexed = repos.some(r => r.owner === repo.owner.login && r.name === repo.name);
                   
@@ -585,98 +586,100 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
                     <div 
                       key={i}
                       onClick={() => onSelectRepo(repo.owner.login, repo.name, repo.default_branch)}
-                      className="group bg-slate-900/40 border border-slate-800 p-6 rounded-3xl hover:bg-slate-900 hover:border-blue-500/30 transition-all cursor-pointer flex flex-col justify-between h-44 relative overflow-hidden"
+                      className="group relative bg-neutral-900/40 border border-white/5 p-5 rounded-2xl hover:bg-neutral-900/60 hover:border-brand-primary/30 transition-all cursor-pointer flex flex-col justify-between h-48 overflow-hidden"
                     >
-                      <div className="absolute -right-4 -top-4 w-20 h-20 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-colors" />
+                      {/* Subtle hover glow */}
+                      <div className="absolute -right-8 -top-8 w-24 h-24 bg-brand-primary/5 rounded-full blur-3xl group-hover:bg-brand-primary/10 transition-all duration-500" />
                       
-                      <div className="space-y-2 relative">
+                      <div className="space-y-3 relative z-10">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{repo.owner.login}</div>
+                          <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest flex items-center gap-1.5">
+                            <Github size={10} className="opacity-50" />
+                            {repo.owner.login}
+                          </div>
                           {repo.private && (
                             <div className="px-2 py-0.5 bg-amber-500/10 text-amber-500 text-[8px] font-bold uppercase tracking-widest rounded-full border border-amber-500/20">
                               Private
                             </div>
                           )}
                         </div>
-                        <h3 className="text-xl font-black text-white group-hover:text-blue-400 transition-colors truncate">
-                          {repo.name}
-                        </h3>
-                        <p className="text-slate-500 text-xs line-clamp-2 leading-relaxed h-8">
-                          {repo.description || 'No description provided.'}
-                        </p>
+                        
+                        <div>
+                          <h3 className="text-lg font-bold text-white group-hover:text-brand-primary transition-colors truncate mb-1">
+                            {repo.name}
+                          </h3>
+                          <p className="text-neutral-500 text-xs line-clamp-2 leading-relaxed h-8 font-medium">
+                            {repo.description || 'No description provided.'}
+                          </p>
+                        </div>
                       </div>
 
-                        <div className="flex items-center justify-between mt-4 relative">
-                          <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                            <div className="flex items-center gap-1">
-                              <GitBranch size={12} />
-                              {repo.default_branch}
+                      <div className="flex items-center justify-between mt-4 relative z-10 pt-4 border-t border-white/5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
+                            <GitBranch size={12} className="opacity-50" />
+                            {repo.default_branch}
+                          </div>
+                          {isIndexed && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-500 uppercase tracking-widest">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Indexed
                             </div>
-                            {isIndexed ? (
-                              <div className="flex items-center gap-1 text-emerald-500">
-                                <Activity size={12} />
-                                Indexed
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1 text-blue-500">
-                                <Sparkles size={12} />
-                                Ready to Index
-                              </div>
-                            )}
-                          </div>
-                          <div className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${
-                            isIndexed 
-                              ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 group-hover:bg-emerald-500/20" 
-                              : "bg-blue-500 text-white shadow-lg shadow-blue-500/20 group-hover:bg-blue-400"
-                          }`}>
-                            {isIndexed ? 'Open' : 'Index Repo'}
-                            <ArrowRight size={12} />
-                          </div>
+                          )}
                         </div>
+                        
+                        <div className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+                          isIndexed 
+                            ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 group-hover:bg-emerald-500/20" 
+                            : "bg-white text-black shadow-lg shadow-white/10 group-hover:bg-neutral-200"
+                        }`}>
+                          {isIndexed ? 'Open' : 'Index'}
+                          <ArrowRight size={10} />
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-20 space-y-6">
-                <div className="p-6 bg-slate-900/50 rounded-full border border-slate-800 text-slate-700">
-                  <Github size={64} />
+              <div className="flex flex-col items-center justify-center py-24 glass rounded-3xl border border-white/5">
+                <div className="p-6 bg-neutral-950/50 rounded-full border border-white/5 text-neutral-700 mb-6">
+                  <Github size={48} className="opacity-20" />
                 </div>
-                <div className="text-center space-y-4 max-w-md">
+                <div className="text-center space-y-6 max-w-sm px-6">
                   <div className="space-y-2">
                     <h3 className="text-xl font-bold text-white">No Repositories Found</h3>
-                    <p className="text-slate-500 text-sm leading-relaxed">
-                      You are connected to GitHub, but the app hasn't been granted access to any repositories yet. 
-                      You need to <strong>Install</strong> the app on your account or organization.
+                    <p className="text-neutral-500 text-sm leading-relaxed">
+                      You are connected to GitHub, but we don't have access to any repositories. 
+                      Grant access to your account or organization to get started.
                     </p>
                   </div>
                   
                   <button 
                     onClick={onInstallGitHub}
-                    className="inline-flex items-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold uppercase tracking-widest text-xs transition-all shadow-xl shadow-blue-500/20 group"
+                    className="inline-flex items-center gap-2 px-8 py-4 bg-white hover:bg-neutral-200 text-black rounded-2xl font-bold uppercase tracking-widest text-xs transition-all shadow-xl shadow-white/10 group w-full justify-center"
                   >
                     <Sparkles size={16} className="group-hover:rotate-12 transition-transform" />
                     Grant Repository Access
                   </button>
 
-                  <p className="text-[10px] text-slate-600 leading-relaxed">
-                    Clicking above will open GitHub where you can select which repositories this app can see. 
-                    You can choose "All repositories" or just specific ones.
+                  <p className="text-[10px] text-neutral-600 leading-relaxed italic">
+                    You can choose "All repositories" or just specific ones in the GitHub installation screen.
                   </p>
                 </div>
               </div>
             )}
             
             {userRepos.length > 0 && (
-              <div className="mt-8 p-4 bg-slate-900/30 border border-slate-800/50 rounded-2xl flex items-start gap-3">
-                <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg shrink-0">
-                  <AlertTriangle size={16} />
+              <div className="mt-12 p-6 glass rounded-2xl border border-white/5 flex items-start gap-4">
+                <div className="p-3 bg-brand-primary/10 text-brand-primary rounded-xl shrink-0">
+                  <Github size={20} />
                 </div>
-                <div className="space-y-1">
-                  <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Missing a repository?</div>
-                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                <div className="space-y-2">
+                  <div className="text-xs font-bold text-white uppercase tracking-widest">Missing a repository?</div>
+                  <p className="text-xs text-neutral-500 leading-relaxed max-w-2xl">
                     If you don't see a private or organization repository, you may need to grant access. 
-                    Go to your <a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">GitHub Settings</a>, 
+                    Go to your <a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline font-bold">GitHub Settings</a>, 
                     find this application, and ensure "Organization access" is granted.
                   </p>
                 </div>

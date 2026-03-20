@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Highlight } from '../types';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, Copy, Check } from 'lucide-react';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-javascript';
@@ -47,22 +47,22 @@ const CodeLine = React.memo<CodeLineProps>(({ line, lineNum, language, matchingH
       id={`line-${lineNum}`}
       onMouseEnter={() => onMouseEnter(lineNum)}
       onMouseLeave={onMouseLeave}
-      className={`transition-all duration-300 group ${matchingHighlight ? 'bg-blue-600/10' : 'hover:bg-white/[0.02]'}`}
+      className={`transition-all duration-300 group ${matchingHighlight ? 'bg-white/5' : 'hover:bg-white/[0.02]'}`}
     >
-      <td className={`w-14 text-right pr-4 text-slate-700 select-none whitespace-nowrap align-top py-0.5 border-l-4 transition-all duration-500 ${matchingHighlight ? 'border-blue-500 text-blue-400/60 font-bold' : 'border-transparent'}`}>
+      <td className={`w-14 text-right pr-4 text-neutral-700 select-none whitespace-nowrap align-top py-0.5 border-l-4 transition-all duration-500 ${matchingHighlight ? 'border-white/50 text-white/60 font-bold' : 'border-transparent'}`}>
         {lineNum}
       </td>
       <td className="relative align-top py-0.5 px-4 min-w-[400px]">
         {isStartOfHighlight && (
           <div className="absolute -top-6 left-4 flex items-center gap-2 z-10 pointer-events-none animate-in fade-in slide-in-from-left-4 duration-700">
-            <div className="text-[10px] bg-blue-600 text-white px-2.5 py-1 rounded-md shadow-[0_0_20px_rgba(37,99,235,0.4)] font-sans font-black flex items-center gap-2 uppercase tracking-tighter border border-blue-400">
-              <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+            <div className="text-[10px] bg-white text-black px-2.5 py-1 rounded-md shadow-[0_0_20px_rgba(255,255,255,0.2)] font-sans font-black flex items-center gap-2 uppercase tracking-tighter border border-white/20">
+              <div className="w-1.5 h-1.5 rounded-full bg-black animate-pulse" />
               {matchingHighlight.function_name || matchingHighlight.label}
             </div>
             {(matchingHighlight.params || matchingHighlight.returns) && (
-                <div className="text-[9px] bg-slate-950 border border-slate-800 text-slate-400 px-2 py-1 rounded-md shadow-2xl mono whitespace-nowrap backdrop-blur-sm">
-                  {matchingHighlight.params && <span className="text-blue-400/80">({matchingHighlight.params})</span>}
-                  {matchingHighlight.returns && <span className="text-emerald-400/80 ml-1">→ {matchingHighlight.returns}</span>}
+                <div className="text-[9px] bg-black border border-white/10 text-neutral-400 px-2 py-1 rounded-md shadow-2xl mono whitespace-nowrap backdrop-blur-sm">
+                  {matchingHighlight.params && <span className="text-neutral-300">({matchingHighlight.params})</span>}
+                  {matchingHighlight.returns && <span className="text-neutral-300 ml-1">→ {matchingHighlight.returns}</span>}
                 </div>
             )}
           </div>
@@ -70,20 +70,20 @@ const CodeLine = React.memo<CodeLineProps>(({ line, lineNum, language, matchingH
 
         {isHovered && matchingHighlight?.explanation && (
           <div className="absolute left-4 bottom-full mb-2 z-50 w-[300px] animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl backdrop-blur-md">
+            <div className="bg-neutral-900 border border-white/10 p-3 rounded-xl shadow-2xl backdrop-blur-md">
               <div className="flex items-center gap-2 mb-2">
-                <Sparkles size={12} className="text-blue-400" />
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AI Insight</span>
+                <Sparkles size={12} className="text-white" />
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">AI Insight</span>
               </div>
-              <p className="text-[11px] text-slate-300 leading-relaxed font-sans italic">
+              <p className="text-[11px] text-neutral-300 leading-relaxed font-sans italic">
                 {matchingHighlight.explanation}
               </p>
             </div>
-            <div className="w-3 h-3 bg-slate-900 border-r border-b border-slate-700 rotate-45 absolute -bottom-1.5 left-6" />
+            <div className="w-3 h-3 bg-neutral-900 border-r border-b border-white/10 rotate-45 absolute -bottom-1.5 left-6" />
           </div>
         )}
 
-        <pre className={`language-${language} whitespace-pre text-slate-300 m-0 leading-relaxed transition-all duration-300 pr-10 ${matchingHighlight ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'}`}>
+        <pre className={`language-${language} whitespace-pre text-neutral-300 m-0 leading-relaxed transition-all duration-300 pr-10 ${matchingHighlight ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'}`}>
           <code ref={codeRef} className={`language-${language}`}>{line || ' '}</code>
         </pre>
       </td>
@@ -97,6 +97,17 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
   const [selection, setSelection] = useState<{ text: string; top: number; left: number } | null>(null);
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(500);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
 
   const lines = content.split('\n');
   const fileHighlights = React.useMemo(() => 
@@ -196,18 +207,26 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
   const visibleLines = lines.slice(0, visibleCount);
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 mono text-[13px] relative overflow-hidden" onMouseUp={handleSelection}>
-      <div className="bg-slate-900/80 backdrop-blur-md px-6 py-3 text-slate-400 text-xs border-b border-slate-800 flex justify-between items-center sticky top-0 z-20 shrink-0">
+    <div className="flex flex-col h-full bg-black mono text-[13px] relative overflow-hidden" onMouseUp={handleSelection}>
+      <div className="bg-black/80 backdrop-blur-md px-6 py-3 text-neutral-400 text-xs border-b border-white/10 flex justify-between items-center sticky top-0 z-20 shrink-0">
         <div className="flex items-center gap-3">
-           <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-           <span className="text-slate-200 font-bold tracking-tight">{filename.split('/').pop()}</span>
+           <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+           <span className="text-white font-bold tracking-tight">{filename.split('/').pop()}</span>
            <span className="text-[10px] opacity-30 font-mono tracking-tighter truncate max-w-[200px]">{filename}</span>
         </div>
         <div className="flex items-center gap-4">
           <button 
+            onClick={handleCopy}
+            className="flex items-center gap-2 px-3 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-md border border-white/10 transition-all text-[10px] font-bold uppercase tracking-wider"
+            title="Copy file content"
+          >
+            {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            {isCopied ? 'Copied' : 'Copy'}
+          </button>
+          <button 
             onClick={onScanFile}
             disabled={isScanning}
-            className="flex items-center gap-2 px-3 py-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 rounded-md border border-blue-500/30 transition-all text-[10px] font-bold uppercase tracking-wider disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded-md border border-white/20 transition-all text-[10px] font-bold uppercase tracking-wider disabled:opacity-50"
           >
             {isScanning ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
             {isScanning ? 'Scanning...' : 'Scan Symbols'}
@@ -229,7 +248,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
               onExplainSelection?.(selection.text);
               setSelection(null);
             }}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-[11px] font-bold shadow-[0_0_25px_rgba(37,99,235,0.4)] flex items-center gap-2 hover:bg-blue-500 hover:scale-105 transition-all border border-blue-400/30"
+            className="bg-white text-black px-3 py-1.5 rounded-full text-[11px] font-bold shadow-[0_0_25px_rgba(255,255,255,0.2)] flex items-center gap-2 hover:bg-neutral-200 hover:scale-105 transition-all border border-white/30"
           >
             <Sparkles size={14} /> Explain Selection
           </button>
@@ -255,7 +274,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename, highl
             </tbody>
           </table>
           {visibleCount < lines.length && (
-            <div ref={observerTarget} className="h-20 flex items-center justify-center text-slate-500 text-xs font-bold uppercase tracking-widest">
+            <div ref={observerTarget} className="h-20 flex items-center justify-center text-neutral-500 text-xs font-bold uppercase tracking-widest">
               <Loader2 size={16} className="animate-spin mr-2" /> Loading more lines...
             </div>
           )}

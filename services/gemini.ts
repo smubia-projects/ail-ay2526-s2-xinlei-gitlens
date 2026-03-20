@@ -26,9 +26,9 @@ function getAI() {
   if (!aiInstance) {
     const apiKey = currentConfig.apiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey && currentConfig.provider === 'gemini') {
-      console.warn("GEMINI_API_KEY is not set. API calls will fail.");
+      throw new Error("GEMINI_API_KEY is not set. Please configure your API key in the settings.");
     } else if (apiKey?.startsWith("MapAPI")) {
-      console.warn("The GEMINI_API_KEY appears to be a Google Maps API key. Please use a Gemini API key from https://aistudio.google.com/app/apikey");
+      throw new Error("The GEMINI_API_KEY appears to be a Google Maps API key. Please use a Gemini API key from https://aistudio.google.com/app/apikey");
     }
     aiInstance = new GoogleGenAI({ apiKey: apiKey || "" });
   }
@@ -164,7 +164,9 @@ async function callOpenAI(params: any): Promise<any> {
   const text = Array.isArray(data?.choices) && data.choices.length > 0 
     ? data.choices[0].message?.content || "" 
     : "";
-  console.log(`[AI] OpenAI response from ${model}:`, text);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[AI] OpenAI response from ${model}:`, text);
+  }
   return { text };
 }
 
@@ -626,7 +628,9 @@ export const analyzeFileSymbols = async (
   });
 
   const jsonStr = response.text?.trim() || '{"symbols": []}';
-  console.log(`[AI] analyzeFileSymbols raw response for ${filename}:`, jsonStr);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[AI] analyzeFileSymbols raw response for ${filename}:`, jsonStr);
+  }
   try {
     const data = extractJson(jsonStr);
     const rawSymbols = Array.isArray(data) ? data : (data.symbols || []);
@@ -657,7 +661,9 @@ export const analyzeFileSymbols = async (
       };
     });
 
-    console.log(`[AI] analyzeFileSymbols parsed and mapped ${symbols.length} symbols:`, symbols);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[AI] analyzeFileSymbols parsed and mapped ${symbols.length} symbols:`, symbols);
+    }
     return symbols;
   } catch (e) {
     console.error("Failed to parse symbols JSON", e);

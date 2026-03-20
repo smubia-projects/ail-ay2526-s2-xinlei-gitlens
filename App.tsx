@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode, Settings } from 'lucide-react';
+import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode, Settings, Copy, Check } from 'lucide-react';
 import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
 import { Repository, RepoFile, ChatMessage, AnalysisResult, Highlight, RepoOverview, DependencyGraphData, RepoStats, AIConfig } from './types';
@@ -17,17 +17,18 @@ import { IndexingOverlay } from './components/IndexingOverlay';
 import { SettingsModal } from './components/SettingsModal';
 
 const FormattedText = ({ text, onFileClick }: { text: string; onFileClick?: (path: string) => void }) => {
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
   const components = {
     code({ node, inline, className, children, ...props }: any) {
       const content = String(children).replace(/\n$/, '');
-      // Check if the code block looks like a file path
       const isPath = /^[a-zA-Z0-9._\-\/]+\.[a-zA-Z0-9]+$/.test(content);
       
       if (inline && isPath && onFileClick) {
         return (
           <button 
             onClick={() => onFileClick(content)}
-            className="bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded-md mono text-[12px] border border-blue-500/20 hover:bg-blue-500/20 transition-colors cursor-pointer inline-flex items-center gap-1"
+            className="bg-brand-primary/10 text-brand-primary px-2 py-0.5 rounded-lg mono text-[11px] font-bold border border-brand-primary/20 hover:bg-brand-primary/20 transition-all cursor-pointer inline-flex items-center gap-1.5"
           >
             <FileCode size={12} />
             {content}
@@ -35,16 +36,51 @@ const FormattedText = ({ text, onFileClick }: { text: string; onFileClick?: (pat
         );
       }
       
+      if (inline) {
+        return (
+          <code className={`${className} bg-white/5 text-neutral-300 px-1.5 py-0.5 rounded-md mono text-[11px] font-medium border border-white/10`} {...props}>
+            {children}
+          </code>
+        );
+      }
+
       return (
-        <code className={`${className} bg-slate-800/60 text-blue-400 px-1.5 py-0.5 rounded-md mono text-[12px] border border-slate-700/50`} {...props}>
-          {children}
-        </code>
+        <div className="relative group mt-4 mb-4">
+          <div className="absolute top-3 right-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(content);
+                setCopiedCode(content);
+                setTimeout(() => setCopiedCode(null), 2000);
+              }}
+              className="p-2 bg-neutral-900/80 backdrop-blur-md text-neutral-400 rounded-xl hover:bg-neutral-800 hover:text-white border border-white/5 transition-all shadow-xl"
+              title="Copy code"
+            >
+              {copiedCode === content ? <Check size={14} className="text-brand-primary" /> : <Copy size={14} />}
+            </button>
+          </div>
+          <div className="bg-black/40 rounded-2xl border border-white/5 overflow-hidden shadow-2xl">
+            <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/40" />
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-500/20 border border-amber-500/40" />
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/20 border border-emerald-500/40" />
+              </div>
+              <div className="text-[9px] font-bold text-neutral-600 uppercase tracking-widest">Code Block</div>
+            </div>
+            <pre className="!mt-0 !mb-0 p-4 overflow-x-auto custom-scrollbar">
+              <code className={`${className} block mono text-[12px] leading-relaxed text-neutral-300`} {...props}>
+                {children}
+              </code>
+            </pre>
+          </div>
+        </div>
       );
     }
   };
 
   return (
-    <div className="markdown-body prose prose-invert prose-slate max-w-none text-[14px]">
+    <div className="markdown-body prose prose-invert prose-neutral max-w-none text-[13px] leading-relaxed">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {typeof text === 'string' ? text : JSON.stringify(text, null, 2)}
       </ReactMarkdown>
@@ -171,6 +207,10 @@ export default function App() {
     }
     
     const handleMessage = (event: MessageEvent) => {
+      // Validate origin to prevent cross-site scripting attacks
+      if (event.origin !== window.location.origin && !event.origin.endsWith('.run.app') && !event.origin.includes('localhost')) {
+        return;
+      }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         const { token, user } = event.data;
         if (token) {
@@ -764,9 +804,9 @@ export default function App() {
     try {
       const explanation = await explainSelection(selection, selectedFile.path, selectedFile.content);
       setMessages(prev => [...prev, { role: 'assistant', content: explanation }]);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setMessages(prev => [...prev, { role: 'assistant', content: "Failed to explain selection." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: err.message || "Failed to explain selection." }]);
     } finally {
       setIsLoading(false);
     }
@@ -980,9 +1020,9 @@ export default function App() {
 
       setDependencyData(data);
       setActiveTab('logic');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError("Failed to generate logic flow.");
+      setError(err.message || "Failed to generate logic flow.");
     } finally {
       setIsGeneratingGraph(false);
     }
@@ -1008,9 +1048,9 @@ export default function App() {
       // Scroll to top to show the new symbols
       scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       setSidebarTab('focus');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError("Failed to scan file symbols.");
+      setError(err.message || "Failed to scan file symbols.");
     } finally {
       setIsScanningFile(false);
     }
@@ -1032,9 +1072,9 @@ export default function App() {
 
   if (isCheckingAuth) {
     return (
-      <div className="h-screen w-full bg-slate-950 flex flex-col items-center justify-center gap-4">
-        <Loader2 size={48} className="text-blue-500 animate-spin" />
-        <div className="text-slate-500 font-bold uppercase tracking-widest text-xs">Verifying Session...</div>
+      <div className="h-screen w-full atmosphere flex flex-col items-center justify-center gap-4">
+        <Loader2 size={48} className="text-neutral-400 animate-spin" />
+        <div className="text-neutral-500 font-bold uppercase tracking-widest text-xs">Verifying Session...</div>
       </div>
     );
   }
@@ -1068,82 +1108,97 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-slate-950">
-      <header className="h-14 border-b border-slate-800 bg-slate-900/50 backdrop-blur-xl flex items-center px-6 justify-between shrink-0 z-50">
-        <div className="flex items-center gap-3 shrink-0">
-          <button 
-            onClick={() => setView('home')}
-            className="bg-blue-600 p-1.5 rounded-lg shadow-lg shadow-blue-500/20 hover:scale-110 transition-transform"
-          >
-            <Compass className="text-white" size={20} />
-          </button>
-          <h1 className="font-bold text-lg tracking-tight cursor-pointer" onClick={() => setView('home')}>
-            GitLens <span className="text-blue-500">Cursor</span>
-          </h1>
-          <div className="h-4 w-[1px] bg-slate-700 mx-2" />
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded border border-slate-700">
-            <GitBranch size={12} />
-            <span className="max-w-[150px] truncate">{repo ? `${repo.owner}/${repo.name}` : 'No repo loaded'}</span>
-          </div>
-        </div>
-          <div className="flex-1 max-w-2xl px-8 flex gap-2">
-            <div className="relative flex-1">
-              <Github className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-              <input
-                type="text" value={url} onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleFetchRepo()}
-                placeholder="Paste GitHub URL..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-md py-1.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-slate-600"
-              />
-            </div>
-            <button
-              onClick={() => handleFetchRepo()} disabled={isIndexing}
-              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-blue-500/10 shrink-0"
-            >
-              {isIndexing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              {isIndexing ? 'Mapping...' : 'Index Repo'}
-            </button>
-          </div>
+    <div className="flex flex-col h-screen overflow-hidden atmosphere text-neutral-200 selection:bg-brand-primary/30 selection:text-white">
+      <header className="h-16 border-b border-white/5 bg-black/40 backdrop-blur-2xl flex items-center px-6 justify-between shrink-0 z-50 relative">
+        {/* Subtle top glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-[1px] bg-gradient-to-r from-transparent via-brand-primary/50 to-transparent" />
+        
         <div className="flex items-center gap-4 shrink-0">
           <button 
+            onClick={() => setView('home')}
+            className="group relative p-2 bg-white rounded-xl shadow-2xl shadow-white/10 hover:scale-105 active:scale-95 transition-all"
+          >
+            <Compass className="text-black" size={20} />
+          </button>
+          <div className="flex flex-col">
+            <h1 className="font-bold text-base tracking-tight cursor-pointer text-white flex items-center gap-2" onClick={() => setView('home')}>
+              GitLens <span className="text-neutral-500 font-medium">Cursor</span>
+            </h1>
+            {repo && (
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-500 uppercase tracking-widest mt-0.5">
+                <GitBranch size={10} className="opacity-50" />
+                <span className="max-w-[120px] truncate">{repo.owner}/{repo.name}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 max-w-xl px-12 flex gap-3">
+          <div className="relative flex-1 group">
+            <div className="absolute inset-0 bg-brand-primary/5 rounded-xl blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity" />
+            <Github className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500 group-focus-within:text-brand-primary transition-colors" size={16} />
+            <input
+              type="text" value={url} onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleFetchRepo()}
+              placeholder="Paste GitHub URL to index..."
+              className="w-full bg-neutral-900/50 border border-white/5 rounded-xl py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/50 focus:border-brand-primary/50 transition-all placeholder:text-neutral-600 text-white relative z-10"
+            />
+          </div>
+          <button
+            onClick={() => handleFetchRepo()} disabled={isIndexing}
+            className="bg-white hover:bg-neutral-200 disabled:opacity-50 text-black px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-xl shadow-white/10 shrink-0 relative z-10 active:scale-95"
+          >
+            {isIndexing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            {isIndexing ? 'Mapping...' : 'Index'}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-6 shrink-0">
+          <button 
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-blue-400 rounded-lg border border-slate-700 transition-all shadow-inner"
+            className="p-2.5 bg-neutral-900/50 hover:bg-neutral-800/80 text-neutral-400 hover:text-white rounded-xl border border-white/5 transition-all shadow-inner group"
             title="AI Settings"
           >
-            <Settings size={16} />
+            <Settings size={18} className="group-hover:rotate-45 transition-transform duration-500" />
           </button>
+          
+          <div className="h-8 w-[1px] bg-white/5" />
+
           {githubUser ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pl-2">
               <div className="flex flex-col items-end">
-                <span className="text-[10px] font-bold text-white leading-none">{githubUser.login}</span>
+                <span className="text-xs font-bold text-white leading-none">{githubUser.login}</span>
                 <button 
                   onClick={handleLogoutGitHub}
-                  className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase tracking-widest mt-1 transition-colors"
+                  className="text-[9px] text-neutral-500 hover:text-red-400 font-bold uppercase tracking-widest mt-1 transition-colors"
                 >
                   Disconnect
                 </button>
               </div>
-              <img 
-                src={githubUser.avatar_url} 
-                alt={githubUser.login} 
-                className="h-8 w-8 rounded-full border border-slate-700 shadow-lg"
-                referrerPolicy="no-referrer"
-              />
+              <div className="relative group">
+                <div className="absolute inset-0 bg-brand-primary/20 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
+                <img 
+                  src={githubUser.avatar_url} 
+                  alt={githubUser.login} 
+                  className="h-9 w-9 rounded-full border border-white/10 shadow-xl relative z-10"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
             </div>
           ) : (
             <button 
               onClick={handleConnectGitHub}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-all text-[10px] font-bold uppercase tracking-widest"
+              className="flex items-center gap-2 px-4 py-2 bg-neutral-900/50 hover:bg-neutral-800 text-neutral-300 rounded-xl border border-white/5 transition-all text-[10px] font-bold uppercase tracking-widest"
             >
               <Github size={14} />
-              Connect GitHub
+              Connect
             </button>
           )}
         </div>
       </header>
 
       {isIndexing && (
-        <div className="bg-blue-600/10 border-b border-blue-500/20 p-2 flex items-center justify-center gap-3 text-blue-400 text-[10px] font-bold uppercase tracking-widest animate-in slide-in-from-top duration-300 relative z-40">
+        <div className="bg-neutral-400/10 border-b border-neutral-400/20 p-2 flex items-center justify-center gap-3 text-neutral-400 text-[10px] font-bold uppercase tracking-widest animate-in slide-in-from-top duration-300 relative z-40">
           <Loader2 size={14} className="animate-spin" />
           <span>
             {indexingProgress 
@@ -1153,9 +1208,9 @@ export default function App() {
               : 'Mapping Repository Architecture...'}
           </span>
           {indexingProgress && (
-            <div className="w-32 h-1 bg-slate-800 rounded-full overflow-hidden">
+            <div className="w-32 h-1 bg-neutral-800 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-blue-500 transition-all duration-300" 
+                className="h-full bg-neutral-400 transition-all duration-300" 
                 style={{ width: `${(indexingProgress.current / indexingProgress.total) * 100}%` }}
               />
             </div>
@@ -1172,48 +1227,41 @@ export default function App() {
       )}
 
       <main className="flex-1 flex overflow-hidden w-full relative">
-        <aside className="w-64 border-r border-slate-800 bg-slate-950 flex flex-col shrink-0">
-          <div className="p-3 border-b border-slate-800 flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
-            <Layers size={14} /> Filesystem
+        <aside className="w-64 border-r border-white/5 bg-neutral-950 flex flex-col shrink-0">
+          <div className="p-4 border-b border-white/5 flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em]">
+            <Layers size={14} className="text-brand-primary" /> Filesystem
           </div>
           <div className="flex-1 overflow-hidden">
             <FileExplorer files={files} onSelectFile={handleSelectFile} selectedPath={selectedFile?.path || null} />
           </div>
         </aside>
 
-        <section className="flex-1 flex flex-col min-w-0 bg-slate-900 border-r border-slate-800 relative overflow-hidden">
-          <div className="h-10 border-b border-slate-800 flex items-center justify-between px-4 bg-slate-950/50 shrink-0 z-10">
+        <section className="flex-1 flex flex-col min-w-0 bg-neutral-950 border-r border-white/5 relative overflow-hidden">
+          <div className="h-12 border-b border-white/5 flex items-center justify-between px-4 bg-black/20 backdrop-blur-md shrink-0 z-10">
              <div className="flex items-center gap-4 h-full">
-               <div className="flex h-full">
-                 <button 
-                   onClick={() => setActiveTab('dashboard')}
-                   className={`px-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-                 >
-                   <Activity size={14} /> Dashboard
-                 </button>
-                 <button 
-                   onClick={() => setActiveTab('code')}
-                   className={`px-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'code' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-                 >
-                   <Code2 size={14} /> Code
-                 </button>
-                 <button 
-                   onClick={() => setActiveTab('map')}
-                   className={`px-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'map' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-                 >
-                   <Map size={14} /> Visual Map
-                 </button>
-                 {dependencyData && (
+               <div className="flex h-full p-1 gap-1">
+                 {[
+                   { id: 'dashboard', label: 'Dashboard', icon: Activity },
+                   { id: 'code', label: 'Code', icon: Code2 },
+                   { id: 'map', label: 'Visual Map', icon: Map },
+                   ...(dependencyData ? [{ id: 'logic', label: 'Logic Flow', icon: Network }] : [])
+                 ].map((tab) => (
                    <button 
-                     onClick={() => setActiveTab('logic')}
-                     className={`px-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'logic' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                     key={tab.id}
+                     onClick={() => setActiveTab(tab.id as any)}
+                     className={`px-4 rounded-lg flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest transition-all ${
+                       activeTab === tab.id 
+                         ? 'bg-white/10 text-white shadow-inner' 
+                         : 'text-neutral-500 hover:text-neutral-300 hover:bg-white/5'
+                     }`}
                    >
-                     <Network size={14} /> Logic Flow
+                     <tab.icon size={14} /> {tab.label}
                    </button>
-                 )}
+                 ))}
                </div>
                {selectedFile && activeTab === 'code' && (
-                 <div className="flex items-center gap-2 px-3 py-1 bg-slate-800/80 rounded-md border border-slate-700 text-[11px] font-medium text-blue-400 truncate max-w-[200px]">
+                 <div className="flex items-center gap-2 px-3 py-1 bg-neutral-900/50 rounded-lg border border-white/5 text-[10px] font-bold text-neutral-400 uppercase tracking-widest truncate max-w-[200px]">
+                   <div className="w-1 h-1 rounded-full bg-brand-primary" />
                    {selectedFile.path.split('/').pop()}
                  </div>
                )}
@@ -1222,7 +1270,11 @@ export default function App() {
                {activeTab === 'code' && (
                  <button 
                   onClick={() => setShowHighlights(!showHighlights)}
-                  className={`p-1.5 rounded-lg transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider ${showHighlights ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30 shadow-lg shadow-blue-500/5' : 'text-slate-500 border border-slate-800 hover:bg-slate-800'}`}
+                  className={`p-1.5 rounded-lg transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider border ${
+                    showHighlights 
+                      ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 shadow-lg shadow-brand-primary/5' 
+                      : 'text-neutral-500 border-white/5 hover:bg-white/5'
+                  }`}
                  >
                    {showHighlights ? <Eye size={14} /> : <EyeOff size={14} />}
                    <span className="hidden sm:inline">{showHighlights ? 'Visible' : 'Hidden'}</span>
@@ -1241,7 +1293,7 @@ export default function App() {
                   isRefreshing={isIndexing}
                 />
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50 p-10">
+                <div className="h-full flex flex-col items-center justify-center text-neutral-700 gap-4 opacity-50 p-10">
                   <Activity size={64} className="animate-pulse" />
                   <div className="text-center">
                     <p className="text-lg font-medium">Project Dashboard</p>
@@ -1262,7 +1314,7 @@ export default function App() {
                   isScanning={isScanningFile}
                 />
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50 p-10">
+                <div className="h-full flex flex-col items-center justify-center text-neutral-700 gap-4 opacity-50 p-10">
                   <Terminal size={64} className="animate-pulse" />
                   <div className="text-center">
                     <p className="text-lg font-medium">Editor Workspace</p>
@@ -1291,37 +1343,36 @@ export default function App() {
           </div>
         </section>
 
-        <aside className="w-[420px] min-w-[420px] max-w-[420px] bg-slate-950 flex flex-col shrink-0 border-l border-slate-800 z-20">
-          <div className="border-b border-slate-800 bg-slate-950/80 backdrop-blur shrink-0">
-            <div className="p-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
-                <Activity size={14} className="text-blue-500" /> Intelligence
+        <aside className="w-[420px] min-w-[420px] max-w-[420px] bg-neutral-950 flex flex-col shrink-0 border-l border-white/5 z-20 relative">
+          <div className="border-b border-white/5 bg-black/20 backdrop-blur-xl shrink-0">
+            <div className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em]">
+                <Activity size={14} className="text-brand-primary" /> Intelligence
               </div>
-              {isLoading && <div className="animate-spin text-blue-500"><Loader2 size={14} /></div>}
+              {isLoading && <div className="animate-spin text-brand-primary"><Loader2 size={14} /></div>}
             </div>
-            <div className="flex px-2 pb-2 gap-1">
-              <button 
-                onClick={() => setSidebarTab('map')}
-                className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${sidebarTab === 'map' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:bg-slate-800'}`}
-              >
-                Map
-              </button>
-              <button 
-                onClick={() => setSidebarTab('focus')}
-                className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${sidebarTab === 'focus' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:bg-slate-800'}`}
-              >
-                Focus {activeHighlights.filter(h => selectedFile && h.file === selectedFile.path).length > 0 && `(${activeHighlights.filter(h => selectedFile && h.file === selectedFile.path).length})`}
-              </button>
-              <button 
-                onClick={() => setSidebarTab('chat')}
-                className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${sidebarTab === 'chat' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:bg-slate-800'}`}
-              >
-                Chat {messages.length > 0 && `(${messages.length})`}
-              </button>
+            <div className="flex px-3 pb-3 gap-1">
+              {[
+                { id: 'map', label: 'Map' },
+                { id: 'focus', label: 'Focus', count: activeHighlights.filter(h => selectedFile && h.file === selectedFile.path).length },
+                { id: 'chat', label: 'Chat', count: messages.length }
+              ].map((tab) => (
+                <button 
+                  key={tab.id}
+                  onClick={() => setSidebarTab(tab.id as any)}
+                  className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                    sidebarTab === tab.id 
+                      ? 'bg-white/10 text-white border-white/10 shadow-inner' 
+                      : 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-white/5'
+                  }`}
+                >
+                  {tab.label} {tab.count > 0 && <span className="ml-1 opacity-50">({tab.count})</span>}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 custom-scrollbar bg-slate-950 scroll-smooth">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar bg-neutral-950 scroll-smooth">
             {sidebarTab === 'focus' && (
               <div className="flex flex-col gap-4 animate-in fade-in duration-300">
                 {focusedFunction ? (
@@ -1329,49 +1380,53 @@ export default function App() {
                     <div className="flex items-center justify-between">
                       <button 
                         onClick={() => setFocusedFunction(null)}
-                        className="flex items-center gap-2 text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-widest"
+                        className="flex items-center gap-2 text-[10px] font-bold text-neutral-400 hover:text-neutral-400 transition-colors uppercase tracking-widest"
                       >
                         <ChevronRight size={14} className="rotate-180" /> Back to list
                       </button>
-                      <div className="text-[10px] mono text-slate-500 font-bold">L{focusedFunction.start} - L{focusedFunction.end}</div>
+                      <div className="text-[10px] mono text-neutral-500 font-bold">L{focusedFunction.start} - L{focusedFunction.end}</div>
                     </div>
 
-                    <div className="bg-slate-900 border border-blue-500/40 rounded-3xl shadow-2xl p-6 border-t-8 border-t-blue-600 relative">
-                      <div className="flex items-center gap-3 text-blue-400 mb-6">
-                        <div className="p-2 bg-blue-500/20 rounded-xl"><Cpu size={20} /></div>
+                    <div className="bg-neutral-900/50 border border-white/5 rounded-3xl shadow-2xl p-6 relative overflow-hidden group">
+                      <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/5 to-transparent opacity-50" />
+                      
+                      <div className="flex items-center gap-3 text-neutral-400 mb-6 relative z-10">
+                        <div className="p-2.5 bg-brand-primary/10 text-brand-primary rounded-xl border border-brand-primary/20">
+                          <Cpu size={20} />
+                        </div>
                         <div className="flex flex-col">
-                          <span className="font-black text-xs tracking-tight text-white uppercase">Focus Detail</span>
-                          <span className="text-[13px] font-bold text-blue-300 mono truncate">{focusedFunction.function_name || focusedFunction.label}</span>
+                          <span className="font-bold text-[10px] tracking-[0.2em] text-neutral-500 uppercase">Focus Detail</span>
+                          <span className="text-sm font-bold text-white mono truncate">{focusedFunction.function_name || focusedFunction.label}</span>
                         </div>
                       </div>
 
-                      <div className="space-y-5">
-                        <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                          <div className="text-[10px] text-slate-600 uppercase font-black mb-2 flex items-center gap-2 tracking-widest">
-                            <Info size={14} className="text-blue-500" /> 
+                      <div className="space-y-4 relative z-10">
+                        <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                          <div className="text-[9px] text-neutral-500 uppercase font-bold mb-2 flex items-center gap-2 tracking-widest">
+                            <Info size={12} className="text-brand-primary" /> 
                             {focusedFunction.logic_source === 'Repository Structure' ? 'Role in Module' : 'Responsibility'}
                           </div>
-                          <p className="text-[13px] text-slate-300 leading-relaxed">{focusedFunction.description || focusedFunction.explanation}</p>
+                          <p className="text-xs text-neutral-300 leading-relaxed font-medium">{focusedFunction.description || focusedFunction.explanation}</p>
                         </div>
 
-                        <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                          <div className="text-[10px] text-slate-600 uppercase font-black mb-2 flex items-center gap-2 tracking-widest">
-                            <ArrowRightCircle size={14} className="text-blue-500" /> 
+                        <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                          <div className="text-[9px] text-neutral-500 uppercase font-bold mb-2 flex items-center gap-2 tracking-widest">
+                            <ArrowRightCircle size={12} className="text-brand-primary" /> 
                             {focusedFunction.logic_source === 'Repository Structure' ? 'Context' : 'Data Flow'}
                           </div>
-                          <p className="text-[13px] text-slate-300 leading-relaxed italic opacity-80">{focusedFunction.logic_source || "Input/Output Signature"}</p>
+                          <p className="text-xs text-neutral-400 leading-relaxed italic opacity-80 font-medium">{focusedFunction.logic_source || "Input/Output Signature"}</p>
                           {(focusedFunction.params || focusedFunction.returns) && (
-                            <div className="mt-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10 space-y-2">
+                            <div className="mt-3 p-3 rounded-xl bg-white/5 border border-white/5 space-y-2">
                               {focusedFunction.params && (
                                 <div>
-                                  <div className="text-[9px] uppercase font-bold text-blue-400/70 mb-1">Arguments</div>
-                                  <div className="text-[11px] mono text-blue-300 break-all">{focusedFunction.params}</div>
+                                  <div className="text-[8px] uppercase font-bold text-neutral-500 mb-1">Arguments</div>
+                                  <div className="text-[10px] mono text-neutral-400 break-all leading-relaxed">{focusedFunction.params}</div>
                                 </div>
                               )}
                               {focusedFunction.returns && (
                                 <div>
-                                  <div className="text-[9px] uppercase font-bold text-emerald-400/70 mb-1">Returns</div>
-                                  <div className="text-[11px] mono text-emerald-300 break-all">{focusedFunction.returns}</div>
+                                  <div className="text-[8px] uppercase font-bold text-emerald-500/70 mb-1">Returns</div>
+                                  <div className="text-[10px] mono text-emerald-400/80 break-all leading-relaxed">{focusedFunction.returns}</div>
                                 </div>
                               )}
                             </div>
@@ -1379,31 +1434,25 @@ export default function App() {
                         </div>
 
                         {focusedFunction.usage_examples && focusedFunction.usage_examples.length > 0 && (
-                          <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                            <div className="text-[10px] text-emerald-500 uppercase font-black mb-3 flex items-center gap-2 tracking-widest"><Activity size={14} /> Contextual Examples</div>
-                            <div className="space-y-3">
+                          <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                            <div className="text-[9px] text-brand-primary uppercase font-bold mb-3 flex items-center gap-2 tracking-widest">
+                              <Activity size={12} /> Contextual Examples
+                            </div>
+                            <div className="space-y-2.5">
                               {(focusedFunction.usage_examples || []).slice(0, 3).map((ex, i) => (
-                                <div key={i} className="p-3 rounded-xl bg-slate-900/50 border border-slate-800/50 hover:border-blue-500/30 transition-all group cursor-pointer"
+                                <div key={i} className="p-3 rounded-xl bg-neutral-900/50 border border-white/5 hover:border-brand-primary/30 transition-all group/ex cursor-pointer"
                                   onClick={() => handleNavigate(ex.file, ex.line)}
                                 >
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div className="text-[9px] font-bold text-slate-500 mono truncate max-w-[150px]">{ex.file.split('/').pop()}</div>
-                                    <div className="text-[9px] text-blue-400/50 group-hover:text-blue-400 transition-colors">L{ex.line}</div>
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <div className="text-[9px] font-bold text-neutral-400 mono truncate max-w-[150px] group-hover/ex:text-brand-primary transition-colors">{ex.file.split('/').pop()}</div>
+                                    <div className="text-[9px] text-neutral-600 font-bold">L{ex.line}</div>
                                   </div>
-                                  <div className="text-[10px] mono text-blue-300/80 bg-slate-950 p-2 rounded-lg border border-slate-800/50 mb-2 break-all">
+                                  <div className="text-[10px] mono text-neutral-500 bg-black/40 p-2 rounded-lg border border-white/5 mb-2 break-all group-hover/ex:text-neutral-300 transition-colors">
                                     {ex.arguments}
                                   </div>
-                                  <p className="text-[10px] text-slate-500 leading-relaxed italic">{ex.context_explanation}</p>
+                                  <p className="text-[10px] text-neutral-600 leading-relaxed italic group-hover/ex:text-neutral-500 transition-colors">{ex.context_explanation}</p>
                                 </div>
                               ))}
-                              {(focusedFunction.usage_examples || []).length > 3 && (
-                                <button 
-                                  onClick={() => setActiveTab('logic')}
-                                  className="w-full py-2 text-[9px] font-bold text-slate-600 hover:text-blue-400 uppercase tracking-widest transition-colors"
-                                >
-                                  + {(focusedFunction.usage_examples || []).length - 3} more in Logic Flow
-                                </button>
-                              )}
                             </div>
                           </div>
                         )}
@@ -1412,10 +1461,10 @@ export default function App() {
                           <button 
                             onClick={() => handleVisualizeDependencies(focusedFunction)}
                             disabled={isGeneratingGraph}
-                            className="w-full flex items-center justify-center gap-3 py-3 rounded-2xl border border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-blue-500/50 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-400 transition-all disabled:opacity-50 shadow-lg shadow-blue-500/5"
+                            className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl border border-white/5 bg-white text-black hover:bg-neutral-200 text-[10px] font-bold uppercase tracking-widest transition-all disabled:opacity-50 shadow-xl shadow-white/5"
                           >
                             {isGeneratingGraph ? <Loader2 size={16} className="animate-spin" /> : <Network size={16} />}
-                            {isGeneratingGraph ? 'Tracing Logic...' : 'Generate Logic Flow'}
+                            {isGeneratingGraph ? 'Tracing...' : 'Generate Logic Flow'}
                           </button>
                         </div>
                       </div>
@@ -1431,20 +1480,20 @@ export default function App() {
                       return filtered.length > 0 ? (
                         <div className="flex flex-col gap-2">
                           <div className="flex items-center justify-between px-2 mb-1">
-                            <div className="text-[10px] font-bold text-blue-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-[0.2em] flex items-center gap-2">
                               <Sparkles size={12} /> Identified Focus
                             </div>
                           </div>
                           <div className="grid grid-cols-1 gap-2">
                             {filtered.map((h, idx) => (
                               <div key={idx} onClick={() => handleNavigate(h.file, h.start, h)}
-                                className={`flex items-center justify-between p-4 border rounded-2xl transition-all text-left group shadow-sm cursor-pointer ${focusedFunction === h ? 'bg-blue-600/10 border-blue-500 shadow-blue-500/10' : 'bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800/80'}`}
+                                className={`flex items-center justify-between p-4 border rounded-2xl transition-all text-left group shadow-sm cursor-pointer ${focusedFunction === h ? 'bg-neutral-400/10 border-neutral-400 shadow-neutral-400/10' : 'bg-neutral-900 border border-neutral-800 hover:border-neutral-400/50 hover:bg-neutral-800/80'}`}
                               >
                                 <div className="flex flex-col overflow-hidden">
-                                  <span className="text-[13px] font-bold text-slate-100 mono group-hover:text-blue-300 transition-colors truncate">{h.function_name || h.label}</span>
+                                  <span className="text-[13px] font-bold text-neutral-100 mono group-hover:text-neutral-400 transition-colors truncate">{h.function_name || h.label}</span>
                                   <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[10px] bg-slate-800 text-blue-400 px-1.5 py-0.5 rounded border border-slate-700 font-mono font-bold">L{h.start}</span>
-                                    {h.params && <span className="text-[9px] text-slate-500 truncate max-w-[150px] italic">({h.params})</span>}
+                                    <span className="text-[10px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded border border-neutral-700 font-mono font-bold">L{h.start}</span>
+                                    {h.params && <span className="text-[9px] text-neutral-500 truncate max-w-[150px] italic">({h.params})</span>}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -1453,7 +1502,7 @@ export default function App() {
                                       e.stopPropagation();
                                       handleVisualizeDependencies(h);
                                     }}
-                                    className="p-2 bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white rounded-lg transition-all border border-slate-700 shadow-inner"
+                                    className="p-2 bg-neutral-800 hover:bg-neutral-400 text-neutral-400 hover:text-white rounded-lg transition-all border border-neutral-700 shadow-inner"
                                     title="Visualize Dependencies"
                                   >
                                     {isGeneratingGraph ? <Loader2 size={14} className="animate-spin" /> : <Network size={14} />}
@@ -1464,7 +1513,7 @@ export default function App() {
                           </div>
                         </div>
                       ) : (
-                        <div className="h-64 flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50">
+                        <div className="h-64 flex flex-col items-center justify-center text-neutral-700 gap-4 opacity-50">
                           <Code2 size={48} />
                           <div className="text-center">
                             <p className="text-sm font-medium">No symbols identified</p>
@@ -1479,44 +1528,44 @@ export default function App() {
             )}
 
             {sidebarTab === 'map' && overview && (
-              <div className="bg-slate-900/40 backdrop-blur-sm rounded-2xl border border-slate-800 p-6 space-y-6 animate-in fade-in duration-300 shadow-2xl overflow-hidden shrink-0">
-                <div className="flex items-center gap-3 text-blue-400">
-                  <div className="p-2 bg-blue-500/10 rounded-xl border border-blue-500/20"><Map size={20} /></div>
+              <div className="bg-neutral-900/40 backdrop-blur-sm rounded-2xl border border-neutral-800 p-6 space-y-6 animate-in fade-in duration-300 shadow-2xl overflow-hidden shrink-0">
+                <div className="flex items-center gap-3 text-neutral-400">
+                  <div className="p-2 bg-neutral-400/10 rounded-xl border border-neutral-400/20"><Map size={20} /></div>
                   <div className="flex flex-col">
                     <span className="font-bold text-sm tracking-tight text-white">Repository Map</span>
-                    <span className="text-[10px] text-slate-500 uppercase font-mono tracking-widest">{overview.architecture_type}</span>
+                    <span className="text-[10px] text-neutral-500 uppercase font-mono tracking-widest">{overview.architecture_type}</span>
                   </div>
                 </div>
-                <div className="border-l-4 border-blue-500/20 pl-4 py-1">
+                <div className="border-l-4 border-neutral-400/20 pl-4 py-1">
                   <FormattedText text={overview.summary} />
                 </div>
                 <div className="space-y-3">
-                  <div className="text-[10px] font-bold text-slate-600 uppercase pl-1 tracking-[0.2em]">Entry Points</div>
+                  <div className="text-[10px] font-bold text-neutral-600 uppercase pl-1 tracking-[0.2em]">Entry Points</div>
                   <div className="grid grid-cols-1 gap-2">
                     {(overview.entry_points || []).map((ep, i) => (
                       <button key={i} onClick={() => handleNavigate(ep.path)}
-                        className="w-full flex items-start gap-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-900 transition-all text-left group shadow-sm"
+                        className="w-full flex items-start gap-4 p-3 rounded-xl bg-neutral-950/80 border border-neutral-800 hover:border-neutral-400/50 hover:bg-neutral-900 transition-all text-left group shadow-sm"
                       >
-                        <ExternalLink size={14} className="mt-0.5 text-slate-600 group-hover:text-blue-400 transition-colors" />
+                        <ExternalLink size={14} className="mt-0.5 text-neutral-600 group-hover:text-neutral-400 transition-colors" />
                         <div className="flex-1 overflow-hidden">
-                          <div className="text-[12px] font-bold text-slate-100 mono group-hover:text-blue-300 transition-colors truncate">{ep.path.split('/').pop()}</div>
-                          <div className="text-[11px] text-slate-500 leading-tight mt-1">{ep.purpose}</div>
+                          <div className="text-[12px] font-bold text-neutral-100 mono group-hover:text-neutral-400 transition-colors truncate">{ep.path.split('/').pop()}</div>
+                          <div className="text-[11px] text-neutral-500 leading-tight mt-1">{ep.purpose}</div>
                         </div>
                       </button>
                     ))}
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <div className="text-[10px] font-bold text-slate-600 uppercase pl-1 tracking-[0.2em]">Core Modules</div>
+                  <div className="text-[10px] font-bold text-neutral-600 uppercase pl-1 tracking-[0.2em]">Core Modules</div>
                   <div className="grid grid-cols-1 gap-2">
                     {(overview.core_modules || []).map((cm, i) => (
                       <button key={i} onClick={() => handleModuleClick(cm.folder, cm.description)}
-                        className="w-full p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-900 transition-all text-left group shadow-sm"
+                        className="w-full p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 hover:border-neutral-400/50 hover:bg-neutral-900 transition-all text-left group shadow-sm"
                       >
-                        <div className="text-[12px] font-bold text-blue-400 mono flex items-center gap-2 group-hover:translate-x-1 transition-transform">
-                          <FolderOpen size={14} className="text-blue-500" /> {cm.folder}
+                        <div className="text-[12px] font-bold text-neutral-400 mono flex items-center gap-2 group-hover:translate-x-1 transition-transform">
+                          <FolderOpen size={14} className="text-neutral-400" /> {cm.folder}
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-2 leading-relaxed">{cm.description}</div>
+                        <div className="text-[11px] text-neutral-500 mt-2 leading-relaxed">{cm.description}</div>
                       </button>
                     ))}
                   </div>
@@ -1533,7 +1582,7 @@ export default function App() {
                   </div>
                 )}
                 {messages.length === 0 ? (
-                  <div className="h-64 flex flex-col items-center justify-center text-slate-700 gap-4 opacity-50">
+                  <div className="h-64 flex flex-col items-center justify-center text-neutral-700 gap-4 opacity-50">
                     <Activity size={48} />
                     <div className="text-center">
                       <p className="text-sm font-medium">No messages yet</p>
@@ -1542,54 +1591,69 @@ export default function App() {
                   </div>
                 ) : (
                   messages.map((m, i) => (
-                    <div key={i} className={`flex flex-col gap-3 ${m.role === 'user' ? 'items-end' : 'items-start animate-in fade-in slide-in-from-left-4'} shrink-0`}>
-                      <div className={`max-w-[95%] p-4 rounded-2xl shadow-xl transition-all ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none border border-blue-500 shadow-blue-500/20' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'}`}>
-                         {m.role === 'assistant' ? <FormattedText text={m.content} onFileClick={handleSelectFile} /> : <div className="text-[13px] font-medium opacity-90">{m.content}</div>}
+                    <div key={i} className={`flex flex-col gap-3 ${m.role === 'user' ? 'items-end' : 'items-start animate-in fade-in slide-in-from-left-4'} shrink-0 mb-4`}>
+                      <div className={`max-w-[92%] p-4 rounded-2xl shadow-2xl transition-all ${
+                        m.role === 'user' 
+                          ? 'bg-brand-primary text-white rounded-tr-none border border-brand-primary shadow-brand-primary/20' 
+                          : 'glass border border-white/5 text-neutral-200 rounded-tl-none'
+                      }`}>
+                         {m.role === 'assistant' ? (
+                           <FormattedText text={m.content} onFileClick={handleSelectFile} />
+                         ) : (
+                           <div className="text-sm font-medium leading-relaxed">{m.content}</div>
+                         )}
+                         
                          {m.sources && m.sources.length > 0 && (
-                           <div className="mt-4 pt-3 border-t border-slate-800 flex flex-col gap-2">
-                             <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                               <Map size={10} className="text-emerald-500" /> Retrieved Context
+                           <div className="mt-4 pt-4 border-t border-white/5 flex flex-col gap-2.5">
+                             <div className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest flex items-center gap-2">
+                               <Map size={10} className="text-brand-primary" /> Retrieved Context
                              </div>
                              <div className="flex flex-wrap gap-1.5">
                                {m.sources.map((s, idx) => (
                                  <button 
                                    key={idx}
                                    onClick={() => handleNavigate(s.path, s.startLine)}
-                                   className="text-[9px] px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded border border-slate-700 transition-colors truncate max-w-[150px]"
+                                   className="text-[9px] px-2 py-1 bg-white/5 hover:bg-white/10 text-neutral-400 rounded-lg border border-white/5 transition-all truncate max-w-[140px] font-bold"
                                  >
-                                   {s.path.split('/').pop()} (L{s.startLine})
+                                   {s.path.split('/').pop()} <span className="opacity-50 ml-1">L{s.startLine}</span>
                                  </button>
                                ))}
                              </div>
                            </div>
                          )}
                       </div>
+                      
                       {m.analysis && (
-                        <div className="w-full flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-500">
+                        <div className="w-full flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-500 mt-2">
                           {m.analysis.call_tree_markdown && m.analysis.call_tree_markdown.trim() !== "" && (
-                            <div className="bg-slate-900/40 rounded-2xl p-4 border border-slate-800/50 shadow-inner">
-                              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-600 mb-3 uppercase tracking-widest">
-                                <GitBranch size={12} className="rotate-90 text-blue-500" /> Context Tree
+                            <div className="bg-neutral-900/40 rounded-2xl p-4 border border-white/5 shadow-inner">
+                              <div className="flex items-center gap-2 text-[9px] font-bold text-neutral-500 mb-3 uppercase tracking-widest">
+                                <GitBranch size={12} className="rotate-90 text-brand-primary" /> Context Tree
                               </div>
                               <div 
-                                className="mono text-[11px] text-slate-400 whitespace-pre-wrap leading-relaxed bg-slate-950/50 p-3 rounded-xl border border-slate-800 border-l-2 border-l-blue-500/50 max-h-[300px] overflow-y-auto custom-scrollbar"
+                                className="mono text-[10px] text-neutral-400 whitespace-pre-wrap leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 border-l-2 border-l-brand-primary/50 max-h-[300px] overflow-y-auto custom-scrollbar"
                                 onWheel={(e) => e.stopPropagation()}
                               >
                                 {m.analysis.call_tree_markdown}
                               </div>
                             </div>
                           )}
+                          
                           {m.analysis.highlights && m.analysis.highlights.length > 0 && (
                             <div className="flex flex-col gap-2">
-                              <div className="text-[10px] font-bold text-slate-600 uppercase pl-2 tracking-[0.2em] mb-1">Identified Focus</div>
+                              <div className="text-[9px] font-bold text-neutral-600 uppercase pl-2 tracking-widest mb-1">Identified Focus</div>
                               <div className="grid grid-cols-1 gap-2">
                                 {m.analysis.highlights.map((h, idx) => (
                                   <div key={idx} onClick={() => handleNavigate(h.file, h.start, h)}
-                                    className={`flex items-center justify-between p-4 border rounded-2xl transition-all text-left group shadow-sm cursor-pointer ${focusedFunction === h ? 'bg-blue-600/10 border-blue-500 shadow-blue-500/10' : 'bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800/80'}`}
+                                    className={`flex items-center justify-between p-4 border rounded-2xl transition-all text-left group shadow-sm cursor-pointer ${
+                                      focusedFunction === h 
+                                        ? 'bg-brand-primary/10 border-brand-primary shadow-brand-primary/10' 
+                                        : 'bg-neutral-900/50 border border-white/5 hover:border-brand-primary/30 hover:bg-neutral-900'
+                                    }`}
                                   >
                                     <div className="flex flex-col overflow-hidden">
-                                      <span className="text-[13px] font-bold text-slate-100 mono group-hover:text-blue-300 transition-colors truncate">{h.function_name || h.label}</span>
-                                      <span className="text-[11px] text-slate-500 mono opacity-80 mt-1 truncate">{h.file.split('/').pop()}</span>
+                                      <span className="text-xs font-bold text-white mono group-hover:text-brand-primary transition-colors truncate">{h.function_name || h.label}</span>
+                                      <span className="text-[10px] text-neutral-500 mono opacity-80 mt-1 truncate">{h.file.split('/').pop()}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                       <button 
@@ -1597,13 +1661,13 @@ export default function App() {
                                           e.stopPropagation();
                                           handleVisualizeDependencies(h);
                                         }}
-                                        className="p-2 bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white rounded-lg transition-all border border-slate-700"
+                                        className="p-2 bg-neutral-800 hover:bg-brand-primary text-neutral-400 hover:text-white rounded-lg transition-all border border-white/5"
                                         title="Visualize Dependencies"
                                       >
                                         {isGeneratingGraph ? <Loader2 size={14} className="animate-spin" /> : <Network size={14} />}
                                       </button>
                                       {h.start !== undefined && (
-                                        <div className="text-[10px] bg-slate-800 text-blue-400 px-2.5 py-1 rounded-lg border border-slate-700 font-mono font-bold shrink-0">L{h.start}</div>
+                                        <div className="text-[10px] bg-neutral-800 text-neutral-400 px-2.5 py-1 rounded-lg border border-white/5 font-mono font-bold shrink-0">L{h.start}</div>
                                       )}
                                     </div>
                                   </div>
@@ -1621,21 +1685,21 @@ export default function App() {
             
             {isLoading && (
               <div className="flex flex-col gap-4 animate-pulse opacity-40 shrink-0">
-                <div className="h-4 bg-slate-800 rounded-full w-1/2" />
-                <div className="h-32 bg-slate-800 rounded-2xl w-full" />
+                <div className="h-4 bg-neutral-800 rounded-full w-1/2" />
+                <div className="h-32 bg-neutral-800 rounded-2xl w-full" />
               </div>
             )}
           </div>
 
-          <div className={`p-4 border-t border-slate-800 bg-slate-950 shadow-[0_-10px_20px_rgba(0,0,0,0.5)] shrink-0 transition-all ${isDragging ? 'bg-blue-900/20 ring-2 ring-blue-500 ring-inset' : ''}`}
+          <div className={`p-5 border-t border-white/5 bg-black/40 backdrop-blur-2xl shrink-0 transition-all ${isDragging ? 'bg-brand-primary/10 ring-2 ring-brand-primary ring-inset' : ''}`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
           >
             {attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-3">
+              <div className="flex flex-wrap gap-2 mb-4">
                 {attachedFiles.map(f => (
-                  <div key={f.path} className="flex items-center gap-2 px-2 py-1 bg-blue-500/10 border border-blue-500/30 rounded-lg text-[10px] text-blue-400 font-bold animate-in zoom-in-95">
+                  <div key={f.path} className="flex items-center gap-2 px-2.5 py-1.5 bg-brand-primary/10 border border-brand-primary/20 rounded-lg text-[10px] text-brand-primary font-bold animate-in zoom-in-95">
                     <FileCode size={12} />
                     <span className="truncate max-w-[120px]">{f.path.split('/').pop()}</span>
                     <button onClick={() => handleRemoveFile(f.path)} className="hover:text-white transition-colors">
@@ -1645,32 +1709,42 @@ export default function App() {
                 ))}
               </div>
             )}
-            <div className="flex items-center justify-between mb-3 px-1">
+            <div className="flex items-center justify-between mb-4 px-1">
               <div className="flex items-center gap-2">
                 <button 
                   type="button"
                   onClick={() => handleSaveAIConfig({ ...aiConfig, useFlash: !aiConfig.useFlash })}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] font-bold uppercase tracking-widest ${
                     aiConfig.useFlash 
-                      ? "bg-blue-500/10 border-blue-500/30 text-blue-400" 
-                      : "bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700"
+                      ? "bg-brand-primary/10 border-brand-primary/30 text-brand-primary" 
+                      : "bg-neutral-900 border-white/5 text-neutral-500 hover:border-white/20"
                   }`}
                 >
                   <Sparkles size={12} className={aiConfig.useFlash ? "animate-pulse" : ""} />
-                  {aiConfig.useFlash ? "Speed Mode (Flash)" : "Quality Mode (Pro)"}
+                  {aiConfig.useFlash ? "Speed (Flash)" : "Quality (Pro)"}
                 </button>
+                {messages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setMessages([])}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/5 bg-neutral-900 text-neutral-500 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/10 transition-all text-[10px] font-bold uppercase tracking-widest"
+                  >
+                    <X size={12} />
+                    Clear
+                  </button>
+                )}
               </div>
               {isLoading && (
-                <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2">
-                  <Loader2 size={12} className="animate-spin" />
-                  Analyzing... ({loadingTime}s)
+                <div className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                  <Loader2 size={12} className="animate-spin text-brand-primary" />
+                  Analyzing...
                 </div>
               )}
             </div>
             <form onSubmit={handleQuery} className="relative group">
               {showFileSuggestions && (
-                <div className="absolute bottom-full left-0 w-full mb-2 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in slide-in-from-bottom-2">
-                  <div className="p-2 border-b border-slate-800 text-[9px] font-black text-slate-500 uppercase tracking-widest">Files</div>
+                <div className="absolute bottom-full left-0 w-full mb-3 bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in slide-in-from-bottom-2 backdrop-blur-xl">
+                  <div className="p-3 border-b border-white/5 text-[9px] font-bold text-neutral-500 uppercase tracking-widest">Files</div>
                   <div className="max-h-48 overflow-y-auto custom-scrollbar">
                     {fileSuggestions.map((f, i) => (
                       <div 
@@ -1682,12 +1756,12 @@ export default function App() {
                           handleAttachFile(f.path);
                           setShowFileSuggestions(false);
                         }}
-                        className={`px-4 py-2 text-xs cursor-pointer flex items-center gap-3 transition-colors ${i === suggestionIndex ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                        className={`px-4 py-2.5 text-xs cursor-pointer flex items-center gap-3 transition-colors ${i === suggestionIndex ? 'bg-brand-primary text-white' : 'text-neutral-400 hover:bg-white/5'}`}
                       >
-                        <FileCode size={14} />
+                        <FileCode size={14} className="opacity-50" />
                         <div className="flex flex-col">
                           <span className="font-bold">{f.path.split('/').pop()}</span>
-                          <span className={`text-[10px] opacity-60 ${i === suggestionIndex ? 'text-blue-100' : 'text-slate-500'}`}>{f.path}</span>
+                          <span className={`text-[10px] opacity-60 ${i === suggestionIndex ? 'text-white/70' : 'text-neutral-500'}`}>{f.path}</span>
                         </div>
                       </div>
                     ))}
@@ -1700,9 +1774,9 @@ export default function App() {
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder={isDragging ? "Drop file to attach..." : "Ask about logic or use @ to mention files..."}
-                className={`w-full bg-slate-900 border border-slate-800 rounded-xl py-3.5 pl-5 pr-12 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-slate-600 ${isDragging ? 'placeholder:text-blue-400' : ''}`}
+                className={`w-full bg-neutral-900/50 border border-white/5 rounded-2xl py-4 pl-6 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary/50 transition-all placeholder:text-neutral-600 ${isDragging ? 'placeholder:text-brand-primary' : ''}`}
               />
-              <button type="submit" disabled={isLoading} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition-all disabled:opacity-30">
+              <button type="submit" disabled={isLoading} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-2.5 rounded-xl bg-white text-black shadow-xl shadow-white/10 hover:bg-neutral-200 transition-all disabled:opacity-30 active:scale-95">
                 <ChevronRight size={20} />
               </button>
             </form>

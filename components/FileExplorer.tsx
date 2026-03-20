@@ -43,7 +43,7 @@ const getFileIcon = (filename: string) => {
     return <FileJson size={14} className="text-amber-400" />;
   }
   if (['md', 'txt', 'rtf', 'pdf', 'doc', 'docx'].includes(ext || '')) {
-    return <FileText size={14} className="text-slate-400" />;
+    return <FileText size={14} className="text-neutral-400" />;
   }
   if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext || '')) {
     return <FileImage size={14} className="text-emerald-400" />;
@@ -70,13 +70,13 @@ const getFileIcon = (filename: string) => {
     return <Lock size={14} className="text-amber-500" />;
   }
   if (filename.startsWith('.') || ['env', 'config', 'settings'].includes(ext || '')) {
-    return <Settings size={14} className="text-slate-500" />;
+    return <Settings size={14} className="text-neutral-500" />;
   }
   if (['test', 'spec'].some(s => filename.toLowerCase().includes(s))) {
     return <FileSearch size={14} className="text-emerald-400" />;
   }
 
-  return <FileCode size={14} className="text-slate-500" />;
+  return <FileCode size={14} className="text-neutral-500" />;
 };
 
 export const FileExplorer: React.FC<FileExplorerProps> = ({ files, onSelectFile, selectedPath }) => {
@@ -118,7 +118,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ files, onSelectFile,
       <div key={node.path} className="select-none">
         {node.name && (
           <div
-            className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-slate-800 transition-colors text-sm ${isSelected ? 'bg-blue-600/20 text-blue-400 border-r-2 border-blue-500' : 'text-slate-400'}`}
+            className={`flex items-center gap-1.5 py-0.5 px-2 cursor-pointer hover:bg-white/5 transition-colors text-sm ${isSelected ? 'bg-white/10 text-white border-r-2 border-white' : 'text-neutral-400'}`}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
             draggable={node.type === 'blob'}
             onDragStart={(e) => {
@@ -135,7 +135,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ files, onSelectFile,
             {node.type === 'tree' ? (
               <>
                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                <Folder size={14} className="text-blue-400" />
+                <Folder size={14} className="text-neutral-300" />
               </>
             ) : (
               <>
