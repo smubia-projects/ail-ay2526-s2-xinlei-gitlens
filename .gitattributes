@@ -1,0 +1,16 @@
+# Ensure binary files are treated correctly by Git
+* text=auto
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+*.css text
+*.js text
+*.ts text
+*.tsx text
+*.html text
+*.json text
+*.md text
