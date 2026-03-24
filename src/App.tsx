@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { logoBase64 } from './src/logoBase64';
+import { logoBase64 } from './logoBase64';
 import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode, Settings, Copy, Check } from 'lucide-react';
 import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
