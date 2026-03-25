@@ -90,25 +90,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
             <label className="text-[10px] font-black text-neutral-500 uppercase tracking-[0.2em] flex items-center gap-2">
               <Sparkles size={14} /> Performance Mode
             </label>
-            <div className="flex items-center justify-between p-4 bg-black/50 border border-white/10 rounded-2xl">
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-white uppercase tracking-tight">
-                  {config.useFlash ? "Speed Mode (Flash)" : "Quality Mode (Pro)"}
-                </span>
-                <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">
-                  {config.useFlash ? "Lower latency, standard reasoning" : "Higher latency, advanced reasoning"}
-                </span>
-              </div>
-              <button
-                onClick={() => setConfig({ ...config, useFlash: !config.useFlash })}
-                className={`w-12 h-6 rounded-full transition-all relative ${
-                  config.useFlash ? "bg-white" : "bg-neutral-800"
-                }`}
-              >
-                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                  config.useFlash ? "left-7 bg-black" : "left-1 bg-white"
-                }`} />
-              </button>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { id: true, label: "Speed (Flash)", desc: "Lower latency", color: "text-amber-400", border: "border-amber-400/30", bg: "bg-amber-400/10" },
+                { id: false, label: "Quality (Pro)", desc: "Advanced reasoning", color: "text-purple-400", border: "border-purple-400/30", bg: "bg-purple-400/10" }
+              ].map((mode) => (
+                <button
+                  key={mode.label}
+                  onClick={() => setConfig({ ...config, useFlash: mode.id })}
+                  className={`p-4 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${
+                    config.useFlash === mode.id 
+                      ? `${mode.border} ${mode.bg} ${mode.color}` 
+                      : "border-white/10 bg-black/50 text-neutral-500 hover:border-white/20"
+                  }`}
+                >
+                  <div className="font-black uppercase tracking-widest text-xs relative z-10">
+                    {mode.label}
+                  </div>
+                  <div className="text-[9px] font-bold opacity-60 relative z-10">
+                    {mode.desc}
+                  </div>
+                  {config.useFlash === mode.id && (
+                    <div className="absolute -right-1 -bottom-1 opacity-20">
+                      <Sparkles size={32} />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Chat Models */}
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <label className="text-[10px] font-black text-neutral-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                <Cpu size={14} /> Flash Chat Model
+              </label>
+              <input
+                type="text"
+                value={config.flashModel || ''}
+                onChange={(e) => setConfig({ ...config, flashModel: e.target.value })}
+                placeholder="gemini-3-flash-preview"
+                className="w-full bg-black border border-white/10 rounded-2xl py-4 px-4 text-white placeholder:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all font-mono text-sm"
+              />
+            </div>
+
+            <div className="space-y-4">
+              <label className="text-[10px] font-black text-neutral-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                <Cpu size={14} /> Pro Chat Model
+              </label>
+              <input
+                type="text"
+                value={config.proModel || ''}
+                onChange={(e) => setConfig({ ...config, proModel: e.target.value })}
+                placeholder="gemini-3.1-pro-preview"
+                className="w-full bg-black border border-white/10 rounded-2xl py-4 px-4 text-white placeholder:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all font-mono text-sm"
+              />
             </div>
           </div>
 
@@ -149,20 +186,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                   value={config.baseUrl || ''}
                   onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
                   placeholder="https://api.apiyi.com/v1"
-                  className="w-full bg-black border border-white/10 rounded-2xl py-4 px-4 text-white placeholder:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all font-mono text-sm"
-                />
-              </div>
-
-              {/* Chat Model */}
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                  <Cpu size={14} /> Chat Model
-                </label>
-                <input
-                  type="text"
-                  value={config.chatModel || ''}
-                  onChange={(e) => setConfig({ ...config, chatModel: e.target.value })}
-                  placeholder="gemini-3.1-pro-preview"
                   className="w-full bg-black border border-white/10 rounded-2xl py-4 px-4 text-white placeholder:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all font-mono text-sm"
                 />
               </div>

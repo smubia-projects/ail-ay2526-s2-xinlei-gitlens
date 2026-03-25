@@ -6,10 +6,11 @@ import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import axios from "axios";
 import path from "path";
+import { GoogleGenAI } from "@google/genai";
 
-import { RepoModel } from "./src/models/Repo.js";
-import { SnippetModel } from "./src/models/Snippet.js";
-import { UserModel } from "./src/models/User.js";
+import { RepoModel } from "./models/Repo.js";
+import { SnippetModel } from "./models/Snippet.js";
+import { UserModel } from "./models/User.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -160,6 +161,139 @@ async function startServer() {
     });
   });
 
+  // Helper to mask API key
+  const maskApiKey = (key?: string) => {
+    if (!key) return '';
+    if (key.length <= 8) return '********';
+    return key.substring(0, 4) + '********' + key.substring(key.length - 4);
+  };
+
+  // AI Proxy Route
+  app.post('/api/ai/proxy', async (req: any, res) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    
+    try {
+      const { prompt, model, config: requestConfig, contents } = req.body;
+      const user = await UserModel.findOne({ githubId: req.user.id });
+      
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const aiConfig = (user.aiConfig || {}) as any;
+      const provider = aiConfig.provider || 'gemini';
+      const apiKey = aiConfig.apiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
+
+      if (!apiKey) {
+        return res.status(400).json({ error: 'AI API Key not configured' });
+      }
+
+      if (provider === 'gemini') {
+        const ai = new GoogleGenAI({ apiKey });
+        const defaultFlash = 'gemini-3-flash-preview';
+        const defaultPro = 'gemini-3.1-pro-preview';
+        const modelName = model || (aiConfig.useFlash 
+          ? (aiConfig.flashModel || defaultFlash) 
+          : (aiConfig.proModel || defaultPro));
+        
+        let result;
+        if (contents) {
+          result = await ai.models.generateContent({ 
+            model: modelName,
+            contents 
+          });
+        } else {
+          result = await ai.models.generateContent({
+            model: modelName,
+            contents: [{ parts: [{ text: prompt }] }]
+          });
+        }
+        
+        res.json({ text: result.text });
+      } else if (provider === 'openai') {
+        const baseUrl = aiConfig.baseUrl || 'https://api.openai.com/v1';
+        const defaultFlash = 'gpt-4o-mini';
+        const defaultPro = 'gpt-4o';
+        const chatModel = model || (aiConfig.useFlash 
+          ? (aiConfig.flashModel || defaultFlash) 
+          : (aiConfig.proModel || defaultPro));
+        
+        const response = await axios.post(`${baseUrl}/chat/completions`, {
+          model: chatModel,
+          messages: contents ? contents.map((c: any) => ({
+            role: c.role === 'model' ? 'assistant' : c.role,
+            content: c.parts[0].text
+          })) : [{ role: 'user', content: prompt }],
+          ...requestConfig
+        }, {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        res.json({ text: response.data.choices[0].message.content });
+      } else {
+        res.status(400).json({ error: 'Unsupported AI provider' });
+      }
+    } catch (error: any) {
+      console.error('AI Proxy Error:', error.response?.data || error.message);
+      res.status(500).json({ error: error.message, details: error.response?.data });
+    }
+  });
+
+  // AI Embedding Proxy
+  app.post('/api/ai/embed', async (req: any, res) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    
+    try {
+      const { text, model } = req.body;
+      const user = await UserModel.findOne({ githubId: req.user.id });
+      
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const aiConfig = (user.aiConfig || {}) as any;
+      const provider = aiConfig.provider || 'gemini';
+      const apiKey = aiConfig.apiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
+
+      if (!apiKey) {
+        return res.status(400).json({ error: 'AI API Key not configured' });
+      }
+
+      if (provider === 'gemini') {
+        const ai = new GoogleGenAI({ apiKey });
+        const modelName = model || aiConfig.embeddingModel || 'gemini-embedding-2-preview';
+        const result = await ai.models.embedContent({
+          model: modelName,
+          contents: [text]
+        });
+        res.json({ embedding: result.embeddings[0].values });
+      } else if (provider === 'openai') {
+        const baseUrl = aiConfig.baseUrl || 'https://api.openai.com/v1';
+        const embedModel = model || aiConfig.embeddingModel || 'text-embedding-3-small';
+        
+        const response = await axios.post(`${baseUrl}/embeddings`, {
+          model: embedModel,
+          input: text
+        }, {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        res.json({ embedding: response.data.data[0].embedding });
+      } else {
+        res.status(400).json({ error: 'Unsupported AI provider' });
+      }
+    } catch (error: any) {
+      console.error('AI Embedding Error:', error.response?.data || error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // User Config Routes
   app.get("/api/user/config", async (req: any, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
@@ -168,7 +302,12 @@ async function startServer() {
       const user = await UserModel.findOne({ githubId: req.user.id });
       if (!user) return res.status(404).json({ error: "User not found" });
       
-      res.json(user.aiConfig || {});
+      const config = user.aiConfig ? (user.aiConfig as any).toObject() : {};
+      if (config.apiKey) {
+        config.apiKey = maskApiKey(config.apiKey);
+      }
+      
+      res.json(config);
     } catch (err) {
       console.error("Failed to fetch user config:", err);
       res.status(500).json({ error: "Failed to fetch user config" });
@@ -182,13 +321,26 @@ async function startServer() {
       const user = await UserModel.findOne({ githubId: req.user.id });
       if (!user) return res.status(404).json({ error: "User not found" });
       
+      const newConfig = { ...req.body };
+      
+      // If the key is masked, don't update it
+      if (newConfig.apiKey && newConfig.apiKey.includes('********')) {
+        delete newConfig.apiKey;
+      }
+      
       user.aiConfig = {
         ...(user.aiConfig ? (user.aiConfig as any).toObject() : {}),
-        ...req.body
+        ...newConfig
       };
       
       await user.save();
-      res.json(user.aiConfig);
+      
+      const config = (user.aiConfig as any).toObject();
+      if (config.apiKey) {
+        config.apiKey = maskApiKey(config.apiKey);
+      }
+      
+      res.json(config);
     } catch (err) {
       console.error("Failed to save user config:", err);
       res.status(500).json({ error: "Failed to save user config" });

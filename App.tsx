@@ -192,6 +192,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'code' | 'map' | 'dashboard' | 'logic'>('code');
   const [sidebarTab, setSidebarTab] = useState<'map' | 'focus' | 'chat'>('map');
   const [view, setView] = useState<'home' | 'repo'>('home');
+  const [showFilesystem, setShowFilesystem] = useState(true);
+  const [showIntelligence, setShowIntelligence] = useState(true);
   const [stats, setStats] = useState<RepoStats | null>(null);
   const [githubUser, setGithubUser] = useState<any>(null);
   const [githubToken, setGithubToken] = useState<string | null>(null);
@@ -1132,7 +1134,7 @@ export default function App() {
         <div className="flex items-center gap-4 shrink-0">
           <button 
             onClick={() => setView('home')}
-            className="group relative p-1 bg-white rounded-xl shadow-2xl shadow-white/10 hover:scale-105 active:scale-95 transition-all overflow-hidden"
+            className="group relative p-1 bg-brand-primary/10 rounded-xl border border-brand-primary/20 shadow-2xl shadow-brand-primary/10 hover:scale-105 active:scale-95 transition-all overflow-hidden"
           >
             <img 
               src="https://chatgpt.com/backend-api/estuary/public_content/enc/eyJpZCI6Im1fNjljNDE3YzcxMDk4ODE5MWJlNmM2YmIzMDVjMTc5MWM6ZmlsZV8wMDAwMDAwMDI2Yjg3MWZhOWMzMDRmZjBkMTc3NDkzZiIsInRzIjoiMjA1MzciLCJwIjoicHlpIiwiY2lkIjoiMSIsInNpZyI6ImM3MzUyODUyNThmMDIxMWVjNzFjNWMwYzkxYTNiNjYxYzkxN2Y3MDY2YjYwMmU2MjY4MjI4MzJlYmE0MWZlZTMiLCJ2IjoiMCIsImdpem1vX2lkIjpudWxsLCJjcyI6bnVsbCwiY2RuIjpudWxsLCJjcCI6bnVsbCwibWEiOm51bGx9" 
@@ -1248,18 +1250,39 @@ export default function App() {
       )}
 
       <main className="flex-1 flex overflow-hidden w-full relative">
-        <aside className="w-64 border-r border-white/5 bg-neutral-950 flex flex-col shrink-0">
-          <div className="p-4 border-b border-white/5 flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em]">
-            <Layers size={14} className="text-brand-primary" /> Filesystem
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <FileExplorer files={files} onSelectFile={handleSelectFile} selectedPath={selectedFile?.path || null} />
-          </div>
-        </aside>
+        {showFilesystem && (
+          <aside className="w-64 border-r border-white/5 bg-neutral-950 flex flex-col shrink-0 animate-in slide-in-from-left duration-300">
+            <div className="p-4 border-b border-white/5 flex items-center justify-between text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em]">
+              <div className="flex items-center gap-2">
+                <Layers size={14} className="text-brand-primary" /> Filesystem
+              </div>
+              <button 
+                onClick={() => setShowFilesystem(false)}
+                className="p-1 hover:bg-white/5 rounded-md transition-all text-neutral-600 hover:text-neutral-300"
+                title="Hide Sidebar"
+              >
+                <EyeOff size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <FileExplorer files={files} onSelectFile={handleSelectFile} selectedPath={selectedFile?.path || null} />
+            </div>
+          </aside>
+        )}
 
         <section className="flex-1 flex flex-col min-w-0 bg-neutral-950 border-r border-white/5 relative overflow-hidden">
           <div className="h-12 border-b border-white/5 flex items-center justify-between px-4 bg-black/20 backdrop-blur-md shrink-0 z-10">
              <div className="flex items-center gap-4 h-full">
+               {!showFilesystem && (
+                 <button 
+                   onClick={() => setShowFilesystem(true)}
+                   className="p-1.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded-lg hover:bg-brand-primary/20 transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
+                   title="Show Sidebar"
+                 >
+                   <FolderOpen size={14} />
+                   Files
+                 </button>
+               )}
                <div className="flex h-full p-1 gap-1">
                  {[
                    { id: 'dashboard', label: 'Dashboard', icon: Activity },
@@ -1288,6 +1311,16 @@ export default function App() {
                )}
              </div>
              <div className="flex items-center gap-2">
+               {!showIntelligence && (
+                 <button 
+                   onClick={() => setShowIntelligence(true)}
+                   className="p-1.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded-lg hover:bg-brand-primary/20 transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
+                   title="Show Intelligence"
+                 >
+                   <Activity size={14} />
+                   Intelligence
+                 </button>
+               )}
                {activeTab === 'code' && (
                  <button 
                   onClick={() => setShowHighlights(!showHighlights)}
@@ -1357,75 +1390,85 @@ export default function App() {
           </div>
         </section>
 
-        <aside className="w-[420px] min-w-[420px] max-w-[420px] bg-neutral-950 flex flex-col shrink-0 border-l border-white/5 z-20 relative">
-          <div className="border-b border-white/5 bg-black/20 backdrop-blur-xl shrink-0">
-            <div className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em]">
-                <Activity size={14} className="text-brand-primary" /> Intelligence
+        {showIntelligence && (
+          <aside className="w-[420px] min-w-[420px] max-w-[420px] bg-neutral-950 flex flex-col shrink-0 border-l border-white/5 z-20 relative animate-in slide-in-from-right duration-300">
+            <div className="border-b border-white/5 bg-black/20 backdrop-blur-xl shrink-0">
+              <div className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em]">
+                  <Activity size={14} className="text-brand-primary" /> Intelligence
+                </div>
+                <div className="flex items-center gap-2">
+                  {isLoading && <div className="animate-spin text-brand-primary"><Loader2 size={14} /></div>}
+                  <button 
+                    onClick={() => setShowIntelligence(false)}
+                    className="p-1 hover:bg-white/5 rounded-md transition-all text-neutral-600 hover:text-neutral-300"
+                    title="Hide Sidebar"
+                  >
+                    <EyeOff size={14} />
+                  </button>
+                </div>
               </div>
-              {isLoading && <div className="animate-spin text-brand-primary"><Loader2 size={14} /></div>}
+              <div className="flex px-3 pb-3 gap-1">
+                {[
+                  { id: 'map', label: 'Map' },
+                  { id: 'focus', label: 'Focus', count: activeHighlights.filter(h => selectedFile && h.file === selectedFile.path).length },
+                  { id: 'chat', label: 'Chat', count: messages.length }
+                ].map((tab) => (
+                  <button 
+                    key={tab.id}
+                    onClick={() => setSidebarTab(tab.id as any)}
+                    className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                      sidebarTab === tab.id 
+                        ? 'bg-white/10 text-white border-white/10 shadow-inner' 
+                        : 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-white/5'
+                    }`}
+                  >
+                    {tab.label} {tab.count > 0 && <span className="ml-1 opacity-50">({tab.count})</span>}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex px-3 pb-3 gap-1">
-              {[
-                { id: 'map', label: 'Map' },
-                { id: 'focus', label: 'Focus', count: activeHighlights.filter(h => selectedFile && h.file === selectedFile.path).length },
-                { id: 'chat', label: 'Chat', count: messages.length }
-              ].map((tab) => (
-                <button 
-                  key={tab.id}
-                  onClick={() => setSidebarTab(tab.id as any)}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${
-                    sidebarTab === tab.id 
-                      ? 'bg-white/10 text-white border-white/10 shadow-inner' 
-                      : 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-white/5'
-                  }`}
-                >
-                  {tab.label} {tab.count > 0 && <span className="ml-1 opacity-50">({tab.count})</span>}
-                </button>
-              ))}
-            </div>
-          </div>
 
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar bg-neutral-950 scroll-smooth">
-            {sidebarTab === 'focus' && (
-              <div className="flex flex-col gap-4 animate-in fade-in duration-300">
-                {focusedFunction ? (
-                  <div className="flex flex-col gap-6">
-                    <div className="flex items-center justify-between">
-                      <button 
-                        onClick={() => setFocusedFunction(null)}
-                        className="flex items-center gap-2 text-[10px] font-bold text-neutral-400 hover:text-neutral-400 transition-colors uppercase tracking-widest"
-                      >
-                        <ChevronRight size={14} className="rotate-180" /> Back to list
-                      </button>
-                      <div className="text-[10px] mono text-neutral-500 font-bold">L{focusedFunction.start} - L{focusedFunction.end}</div>
-                    </div>
-
-                    <div className="bg-neutral-900/50 border border-white/5 rounded-3xl shadow-2xl p-6 relative overflow-hidden group">
-                      <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/5 to-transparent opacity-50" />
-                      
-                      <div className="flex items-center gap-3 text-neutral-400 mb-6 relative z-10">
-                        <div className="p-2.5 bg-brand-primary/10 text-brand-primary rounded-xl border border-brand-primary/20">
-                          <Cpu size={20} />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="font-bold text-[10px] tracking-[0.2em] text-neutral-500 uppercase">Focus Detail</span>
-                          <span className="text-sm font-bold text-white mono truncate">{focusedFunction.function_name || focusedFunction.label}</span>
-                        </div>
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar bg-neutral-950 scroll-smooth">
+              {sidebarTab === 'focus' && (
+                <div className="flex flex-col gap-4 animate-in fade-in duration-300">
+                  {focusedFunction ? (
+                    <div className="flex flex-col gap-6">
+                      <div className="flex items-center justify-between">
+                        <button 
+                          onClick={() => setFocusedFunction(null)}
+                          className="flex items-center gap-2 text-[10px] font-bold text-neutral-400 hover:text-neutral-400 transition-colors uppercase tracking-widest"
+                        >
+                          <ChevronRight size={14} className="rotate-180" /> Back to list
+                        </button>
+                        <div className="text-[10px] mono text-neutral-500 font-bold">L{focusedFunction.start} - L{focusedFunction.end}</div>
                       </div>
 
-                      <div className="space-y-4 relative z-10">
-                        <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
-                          <div className="text-[9px] text-neutral-500 uppercase font-bold mb-2 flex items-center gap-2 tracking-widest">
-                            <Info size={12} className="text-brand-primary" /> 
-                            {focusedFunction.logic_source === 'Repository Structure' ? 'Role in Module' : 'Responsibility'}
+                      <div className="bg-neutral-900/50 border border-white/5 rounded-3xl shadow-2xl p-6 relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/5 to-transparent opacity-50" />
+                        
+                        <div className="flex items-center gap-3 text-neutral-400 mb-6 relative z-10">
+                          <div className="p-2.5 bg-brand-primary/10 text-brand-primary rounded-xl border border-brand-primary/20">
+                            <Cpu size={20} />
                           </div>
-                          <p className="text-xs text-neutral-300 leading-relaxed font-medium">{focusedFunction.description || focusedFunction.explanation}</p>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-[10px] tracking-[0.2em] text-neutral-500 uppercase">Focus Detail</span>
+                            <span className="text-sm font-bold text-white mono truncate">{focusedFunction.function_name || focusedFunction.label}</span>
+                          </div>
                         </div>
 
-                        <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
-                          <div className="text-[9px] text-neutral-500 uppercase font-bold mb-2 flex items-center gap-2 tracking-widest">
-                            <ArrowRightCircle size={12} className="text-brand-primary" /> 
+                        <div className="space-y-4 relative z-10">
+                          <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                            <div className="text-[9px] text-neutral-500 uppercase font-bold mb-2 flex items-center gap-2 tracking-widest">
+                              <Info size={12} className="text-brand-primary" /> 
+                              {focusedFunction.logic_source === 'Repository Structure' ? 'Role in Module' : 'Responsibility'}
+                            </div>
+                            <p className="text-xs text-neutral-300 leading-relaxed font-medium">{focusedFunction.description || focusedFunction.explanation}</p>
+                          </div>
+
+                          <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                            <div className="text-[9px] text-neutral-500 uppercase font-bold mb-2 flex items-center gap-2 tracking-widest">
+                              <ArrowRightCircle size={12} className="text-brand-primary" /> 
                             {focusedFunction.logic_source === 'Repository Structure' ? 'Context' : 'Data Flow'}
                           </div>
                           <p className="text-xs text-neutral-400 leading-relaxed italic opacity-80 font-medium">{focusedFunction.logic_source || "Input/Output Signature"}</p>
@@ -1730,8 +1773,8 @@ export default function App() {
                   onClick={() => handleSaveAIConfig({ ...aiConfig, useFlash: !aiConfig.useFlash })}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] font-bold uppercase tracking-widest ${
                     aiConfig.useFlash 
-                      ? "bg-brand-primary/10 border-brand-primary/30 text-brand-primary" 
-                      : "bg-neutral-900 border-white/5 text-neutral-500 hover:border-white/20"
+                      ? "bg-amber-400/10 border-amber-400/30 text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.1)]" 
+                      : "bg-purple-400/10 border-purple-400/30 text-purple-400 shadow-[0_0_15px_rgba(167,139,250,0.1)]"
                   }`}
                 >
                   <Sparkles size={12} className={aiConfig.useFlash ? "animate-pulse" : ""} />
@@ -1796,7 +1839,8 @@ export default function App() {
             </form>
           </div>
         </aside>
-      </main>
+      )}
+    </main>
       <IndexingOverlay 
         isVisible={isIndexing} 
         repoName={repo ? `${repo.owner}/${repo.name}` : url} 

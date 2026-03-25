@@ -1,8 +1,7 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import { AnalysisResult, RepoOverview, AIConfig } from "../types.js";
 
-let aiInstance: GoogleGenAI | null = null;
 const getInitialConfig = (): AIConfig => {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('ai_config');
@@ -19,21 +18,14 @@ let currentConfig: AIConfig = getInitialConfig();
 
 export const setAIConfig = (config: AIConfig) => {
   currentConfig = config;
-  aiInstance = null;
 };
 
-function getAI() {
-  if (!aiInstance) {
-    const apiKey = currentConfig.apiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
-    if (!apiKey && currentConfig.provider === 'gemini') {
-      throw new Error("GEMINI_API_KEY is not set. Please configure your API key in the settings.");
-    } else if (apiKey?.startsWith("MapAPI")) {
-      throw new Error("The GEMINI_API_KEY appears to be a Google Maps API key. Please use a Gemini API key from https://aistudio.google.com/app/apikey");
-    }
-    aiInstance = new GoogleGenAI({ apiKey: apiKey || "" });
+const getJwtToken = () => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('gitlens_token');
   }
-  return aiInstance;
-}
+  return null;
+};
 
 const OVERVIEW_SCHEMA = {
   type: Type.OBJECT,
@@ -115,7 +107,11 @@ const ANALYSIS_SCHEMA = {
 async function callOpenAI(params: any): Promise<any> {
   const baseUrl = (currentConfig.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
   const apiKey = currentConfig.apiKey;
-  const model = currentConfig.chatModel || params.model || 'gpt-4o';
+  const defaultFlash = 'gpt-4o-mini';
+  const defaultPro = 'gpt-4o';
+  const model = params.model || (currentConfig.useFlash 
+    ? (currentConfig.flashModel || defaultFlash) 
+    : (currentConfig.proModel || defaultPro));
 
   const messages = [];
   let systemInstruction = params.config?.systemInstruction || "";
@@ -171,41 +167,42 @@ async function callOpenAI(params: any): Promise<any> {
 }
 
 async function callGemini(params: any, maxRetries = 3): Promise<any> {
+  const token = getJwtToken();
+  
+  if (token) {
+    console.log(`[AI] Calling Backend Proxy API - Provider: ${currentConfig.provider}`);
+    const response = await fetch('/api/ai/proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        prompt: typeof params.contents === 'string' ? params.contents : undefined,
+        contents: params.contents?.parts ? [params.contents] : params.contents,
+        model: params.model,
+        config: params.config
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || `Proxy error: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Fallback to client-side if no token (anonymous user with local key)
   if (currentConfig.provider === 'openai') {
-    console.log(`[AI] Calling OpenAI SDK API (${currentConfig.baseUrl || 'https://api.openai.com/v1'}) - Model: ${currentConfig.chatModel || params.model || 'gpt-4o'}`);
+    console.log(`[AI] Calling OpenAI SDK API (${currentConfig.baseUrl || 'https://api.openai.com/v1'})`);
     return callOpenAI(params);
   }
 
-  const isFlash = currentConfig.useFlash || params.model?.includes('flash');
-  const model = isFlash ? "gemini-3-flash-preview" : "gemini-3.1-pro-preview";
-  
-  // Override model if not explicitly forced by the specific call logic
-  if (!params.model || params.model.startsWith('gemini')) {
-    params.model = model;
-  }
-
-  console.log(`[AI] Calling Gemini Native API - Model: ${params.model}`);
-  
-  let retryCount = 0;
-  while (retryCount < maxRetries) {
-    try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Gemini API request timed out")), 45000)
-      );
-      const contentPromise = getAI().models.generateContent(params);
-      return await Promise.race([contentPromise, timeoutPromise]);
-    } catch (err: any) {
-      const isUnavailable = err.message?.includes("503") || err.message?.includes("UNAVAILABLE") || err.status === 503 || err.message?.includes("timed out");
-      if (isUnavailable && retryCount < maxRetries - 1) {
-        retryCount++;
-        const delay = Math.pow(2, retryCount) * 1000;
-        console.warn(`Gemini API issue. Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
-      throw err;
-    }
-  }
+  // For Gemini client-side, we need the SDK which we removed from imports to keep bundle small/secure
+  // But if we really need it for anonymous users, we'd have to dynamic import it or keep it.
+  // Given the security concern, let's assume logged in is the primary use case.
+  throw new Error("Please login with GitHub to use AI features securely.");
 }
 
 /**
@@ -284,9 +281,10 @@ const extractJson = (text: string): any => {
 
 export const getRepoOverview = async (fileList: string[], context?: string): Promise<RepoOverview> => {
   console.time("getRepoOverview");
+  const model = currentConfig.flashModel || "gemini-3-flash-preview";
   try {
     const response = await callGemini({
-      model: "gemini-3-flash-preview",
+      model: model,
       contents: `Analyze the following file list and project context to provide a high-level structural overview of the repository:
       
       FILE LIST:
@@ -347,7 +345,9 @@ export const analyzeCode = async (
   attachedFiles: { path: string; content: string }[] = []
 ): Promise<AnalysisResult> => {
   console.time("analyzeCode");
-  const model = useFlash ? "gemini-3-flash-preview" : "gemini-3.1-pro-preview";
+  const model = useFlash 
+    ? (currentConfig.flashModel || "gemini-3-flash-preview") 
+    : (currentConfig.proModel || "gemini-3.1-pro-preview");
   
   try {
     const contentWithLines = currentFile?.content
@@ -721,9 +721,10 @@ export const getUsageExamples = async (
   }
 };
 export const summarizeFile = async (path: string, content: string): Promise<string> => {
+  const model = currentConfig.flashModel || "gemini-3-flash-preview";
   try {
     const response = await callGemini({
-      model: "gemini-3-flash-preview",
+      model: model,
       contents: `Provide a concise 1-sentence summary of the purpose and main responsibility of this file: ${path}\n\nCONTENT:\n${content.slice(0, 10000)}`,
       config: {
         systemInstruction: "You are a technical architect. Summarize the file's primary role in the system.",
@@ -737,6 +738,33 @@ export const summarizeFile = async (path: string, content: string): Promise<stri
 };
 
 export const embedText = async (text: string): Promise<number[]> => {
+  const token = getJwtToken();
+
+  if (token) {
+    console.log(`[AI] Calling Backend Proxy for Embedding`);
+    try {
+      const response = await fetch('/api/ai/embed', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ text })
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || `Proxy error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.embedding || [];
+    } catch (err) {
+      console.error("Proxy Embedding failed:", err);
+      return [];
+    }
+  }
+
   if (currentConfig.provider === 'openai') {
     console.log(`[AI] Calling OpenAI SDK API for Embedding (${currentConfig.baseUrl || 'https://api.openai.com/v1'}) - Model: ${currentConfig.embeddingModel || 'text-embedding-3-small'}`);
     try {
@@ -770,34 +798,6 @@ export const embedText = async (text: string): Promise<number[]> => {
     }
   }
 
-  const maxRetries = 3;
-  let retryCount = 0;
-
-  while (retryCount < maxRetries) {
-    try {
-      console.log(`[AI] Calling Gemini Native API for Embedding`);
-      const response = await getAI().models.embedContent({
-        model: "gemini-embedding-2-preview",
-        contents: [{ parts: [{ text }] }],
-        config: { outputDimensionality: 768 }
-      });
-      const values = response.embeddings[0].values;
-      if (values.length !== 768) {
-        console.warn(`Embedding dimension mismatch: expected 768, got ${values.length}`);
-      }
-      return values;
-    } catch (err: any) {
-      const isUnavailable = err.message?.includes("503") || err.message?.includes("UNAVAILABLE") || err.status === 503;
-      if (isUnavailable && retryCount < maxRetries - 1) {
-        retryCount++;
-        const delay = Math.pow(2, retryCount) * 1000;
-        console.warn(`Embedding API unavailable (503). Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
-      console.error("Embedding failed:", err);
-      return [];
-    }
-  }
+  console.error("Embedding requires login or local OpenAI config.");
   return [];
 };
