@@ -83,6 +83,7 @@ async function startServer() {
   // Middleware to extract user from JWT token
   app.use((req: any, res, next) => {
     const authHeader = req.headers.authorization;
+    req.guestId = req.headers['x-guest-id'];
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
       try {
@@ -381,7 +382,7 @@ async function startServer() {
       }, {
         headers: { 
           Accept: "application/json",
-          "User-Agent": "GitLens-Cursor-App"
+          "User-Agent": "GitLens-App"
         }
       });
 
@@ -401,7 +402,7 @@ async function startServer() {
       const userRes = await axios.get("https://api.github.com/user", {
         headers: { 
           Authorization: `token ${access_token}`,
-          "User-Agent": "GitLens-Cursor-App"
+          "User-Agent": "GitLens-App"
         }
       });
 
@@ -491,7 +492,7 @@ async function startServer() {
       const response = await axios.get("https://api.github.com/user/installations", {
         headers: { 
           Authorization: `token ${req.githubToken}`,
-          "User-Agent": "GitLens-Cursor-App",
+          "User-Agent": "GitLens-App",
           "Accept": "application/vnd.github.v3+json"
         }
       });
@@ -519,7 +520,7 @@ async function startServer() {
         const response = await axios.get("https://api.github.com/user/repos", {
           headers: { 
             Authorization: `token ${req.githubToken}`,
-            "User-Agent": "GitLens-Cursor-App"
+            "User-Agent": "GitLens-App"
           },
           params: {
             sort: 'updated',
@@ -583,18 +584,23 @@ async function startServer() {
       }
 
       // Filter logic:
-      // 1. Anonymous: Show ONLY public repos that are NOT owned by anyone (unowned/temporary)
-      // 2. Logged in: Show your own repos OR public repos that are NOT owned by anyone
+      // 1. Logged in: Show repos you've indexed (indexedBy contains your ID) OR repos you own (githubUserId)
+      // 2. Anonymous: Show repos you've indexed (indexedBy contains your guestId)
       
       let query: any;
+      const currentUserId = req.user ? String(req.user.id) : req.guestId;
+      
       if (req.user) {
         query = {
           $or: [
-            { githubUserId: req.user.id },
-            { githubUserId: { $exists: false }, isPrivate: false }
+            { indexedBy: String(req.user.id) },
+            { githubUserId: req.user.id }
           ]
         };
+      } else if (req.guestId) {
+        query = { indexedBy: req.guestId };
       } else {
+        // No identity, only show public unowned repos as a fallback
         query = { githubUserId: { $exists: false }, isPrivate: false };
       }
 
@@ -628,13 +634,16 @@ async function startServer() {
     try {
       // Filter logic: same as GET /api/repos
       let filter: any;
+      
       if (req.user) {
         filter = {
           $or: [
-            { githubUserId: req.user.id },
-            { githubUserId: { $exists: false }, isPrivate: false }
+            { indexedBy: String(req.user.id) },
+            { githubUserId: req.user.id }
           ]
         };
+      } else if (req.guestId) {
+        filter = { indexedBy: req.guestId };
       } else {
         filter = { githubUserId: { $exists: false }, isPrivate: false };
       }
@@ -688,6 +697,16 @@ async function startServer() {
         if (repo.isPrivate && (!req.user || repo.githubUserId !== req.user.id)) {
           return res.status(403).json({ error: "Access denied to private repository" });
         }
+        
+        // Add to user's personal library if not already there
+        const currentUserId = req.user ? String(req.user.id) : req.guestId;
+        if (currentUserId && !repo.indexedBy.includes(currentUserId)) {
+          await RepoModel.updateOne(
+            { _id: repo._id },
+            { $addToSet: { indexedBy: currentUserId } }
+          );
+        }
+        
         return res.json(repo);
       }
       return res.status(404).json({ message: "Not found" });
@@ -712,12 +731,15 @@ async function startServer() {
       }
 
       const updateData: any = { 
-        files, 
-        overview, 
-        stats, 
-        highlights, 
-        embedding,
-        lastIndexed: new Date() 
+        $set: {
+          files, 
+          overview, 
+          stats, 
+          highlights, 
+          embedding,
+          lastIndexed: new Date()
+        },
+        $addToSet: { indexedBy: req.user ? String(req.user.id) : req.guestId }
       };
 
       if (req.user && req.githubToken) {
@@ -731,11 +753,11 @@ async function startServer() {
           const permissions = ghRes.data.permissions;
           const hasWriteAccess = permissions && (permissions.push || permissions.admin);
           
-          updateData.isPrivate = ghRes.data.private || false;
+          updateData.$set.isPrivate = ghRes.data.private || false;
 
           if (hasWriteAccess) {
             console.log(`User ${req.user.login} HAS write access. Assigning ownership.`);
-            updateData.githubUserId = req.user.id;
+            updateData.$set.githubUserId = req.user.id;
           } else {
             console.log(`User ${req.user.login} does NOT have write access. Making permanent but unowned.`);
           }
@@ -743,24 +765,22 @@ async function startServer() {
           console.error("GitHub permission check failed:", ghErr.message);
         }
         
-        updateData.isTemporary = false;
+        updateData.$set.isTemporary = false;
         updateData.$unset = { expiresAt: "" }; // Remove TTL
       } else {
         // Unauthenticated user: repo is temporary, expires in 24h
         // Try to check if it's private even for unauthenticated (it will fail if private, which is correct)
         try {
           const ghRes = await axios.get(`https://api.github.com/repos/${owner}/${name}`);
-          updateData.isPrivate = ghRes.data.private || false;
+          updateData.$set.isPrivate = ghRes.data.private || false;
         } catch (e) {
           // If it fails, it might be private or rate limited. 
-          // For unauthenticated, we assume if we can't see it, we can't index it anyway,
-          // but if it's already in DB as private, we should keep it private.
         }
 
         const existingRepo = await RepoModel.findOne({ owner, name, branch });
         if (!existingRepo || !existingRepo.githubUserId) {
-          updateData.isTemporary = true;
-          updateData.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+          updateData.$set.isTemporary = true;
+          updateData.$set.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
         }
       }
 
@@ -776,44 +796,60 @@ async function startServer() {
     }
   });
 
-  // Delete/Clear cache
+  // Remove repository from index/library
   app.delete("/api/repo", async (req: any, res) => {
-    const { owner, name, branch } = req.query;
-    console.log(`DELETE /api/repo hit for ${owner}/${name} (branch: ${branch})`);
+    const { owner, name, branch = 'main' } = req.query;
+    const currentUserId = req.user ? String(req.user.id) : req.guestId;
+
+    console.log(`DELETE /api/repo hit for ${owner}/${name} (branch: ${branch}) by ${currentUserId}`);
     
     if (!owner || !name) {
       return res.status(400).json({ error: "Owner and name are required" });
     }
 
-    try {
-      const query: any = { owner, name };
-      if (branch && branch !== 'undefined') {
-        query.branch = branch;
-      }
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Authentication or Guest ID required" });
+    }
 
-      // Privacy check before delete
+    try {
+      const query: any = { owner, name, branch };
       const repo = await RepoModel.findOne(query);
-      if (repo) {
-        // If it has an owner, only the owner can delete it
-        if (repo.githubUserId) {
-          if (!req.user || repo.githubUserId !== req.user.id) {
-            return res.status(403).json({ error: "Cannot delete a repository owned by another user" });
-          }
-        } else if (repo.isPrivate) {
-          // If it's private but somehow has no owner (shouldn't happen), still restrict
-          if (!req.user) {
-            return res.status(403).json({ error: "Cannot delete a private repository anonymously" });
-          }
-        }
-      }
       
-      const result = await RepoModel.deleteOne(query);
-      if (result.deletedCount === 0) {
-        console.warn(`No repository found to delete for ${owner}/${name} (query: ${JSON.stringify(query)})`);
+      if (!repo) {
         return res.status(404).json({ error: "Repository not found in index" });
       }
-      console.log(`Successfully deleted ${owner}/${name} from index`);
-      return res.json({ message: "Repository removed from index" });
+
+      // Privacy check: If it's private, only the owner can delete it
+      if (repo.isPrivate && (!req.user || repo.githubUserId !== req.user.id)) {
+        return res.status(403).json({ error: "Access denied to private repository" });
+      }
+
+      // If the user is the owner, they can delete the whole thing for everyone
+      const isOwner = req.user && repo.githubUserId === req.user.id;
+
+      if (isOwner) {
+        console.log(`Owner ${req.user.login} deleting repository ${owner}/${name} entirely.`);
+        await RepoModel.deleteOne({ _id: repo._id });
+        await SnippetModel.deleteMany({ repoId: repo._id });
+        return res.json({ message: "Repository and its index deleted successfully" });
+      }
+
+      // Otherwise, just remove the current user/guest from indexedBy
+      console.log(`Removing user ${currentUserId} from indexedBy for ${owner}/${name}.`);
+      await RepoModel.updateOne(
+        { _id: repo._id },
+        { $pull: { indexedBy: currentUserId } }
+      );
+
+      // Check if it's now orphaned (no indexedBy and no owner)
+      const updatedRepo = await RepoModel.findById(repo._id);
+      if (updatedRepo && updatedRepo.indexedBy.length === 0 && !updatedRepo.githubUserId) {
+        console.log(`Repository ${owner}/${name} is now orphaned. Deleting index.`);
+        await RepoModel.deleteOne({ _id: repo._id });
+        await SnippetModel.deleteMany({ repoId: repo._id });
+      }
+
+      return res.json({ message: "Repository removed from your library" });
     } catch (err: any) {
       console.error("Delete error:", err);
       return res.status(500).json({ error: "Failed to remove repository", message: err.message });

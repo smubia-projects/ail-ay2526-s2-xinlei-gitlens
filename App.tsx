@@ -89,6 +89,17 @@ const FormattedText = ({ text, onFileClick }: { text: string; onFileClick?: (pat
 };
 
 export default function App() {
+  const [guestId, setGuestId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let gid = localStorage.getItem('gitlens_guest_id');
+    if (!gid) {
+      gid = 'guest_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('gitlens_guest_id', gid);
+    }
+    setGuestId(gid);
+  }, []);
+
   const [url, setUrl] = useState('https://github.com/facebook/react');
   const [repo, setRepo] = useState<Repository | null>(null);
   const [files, setFiles] = useState<RepoFile[]>([]);
@@ -200,6 +211,13 @@ export default function App() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
+    // Generate or retrieve guest ID for anonymous tracking
+    let gid = localStorage.getItem('gitlens_guest_id');
+    if (!gid) {
+      gid = 'guest_' + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('gitlens_guest_id', gid);
+    }
+
     const token = localStorage.getItem('gitlens_token');
     if (token) {
       setJwtToken(token);
@@ -393,7 +411,9 @@ export default function App() {
       if (!forceRefresh) {
         try {
           console.time("fetchCache");
-          const headers: Record<string, string> = {};
+          const headers: Record<string, string> = {
+            'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+          };
           const activeToken = getJwtToken();
           if (activeToken) {
             headers['Authorization'] = `Bearer ${activeToken}`;
@@ -512,7 +532,10 @@ export default function App() {
       // 5. Save to Cache and get repoId
       setIndexingProgress({ current: 60, total: 100, stage: 'Saving to Cache' });
       try {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const headers: Record<string, string> = { 
+          'Content-Type': 'application/json',
+          'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+        };
         const activeToken = getJwtToken();
         if (activeToken) {
           headers['Authorization'] = `Bearer ${activeToken}`;
@@ -618,7 +641,10 @@ export default function App() {
 
           if (allSnippets.length > 0) {
           setIndexingProgress(prev => prev ? { ...prev, stage: 'Saving Index' } : null);
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          const headers: Record<string, string> = { 
+            'Content-Type': 'application/json',
+            'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+          };
           const activeToken = getJwtToken();
           if (activeToken) {
             headers['Authorization'] = `Bearer ${activeToken}`;
@@ -718,7 +744,10 @@ export default function App() {
         try {
           const queryVector = await embedText(userQuery);
           if (queryVector.length > 0) {
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            const headers: Record<string, string> = { 
+              'Content-Type': 'application/json',
+              'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+            };
             const activeToken = getJwtToken();
             if (activeToken) {
               headers['Authorization'] = `Bearer ${activeToken}`;
@@ -990,7 +1019,9 @@ export default function App() {
       const flowPromise = selectedFile ? getFunctionFlow(symbolName, selectedFile.content) : Promise.resolve("");
 
       // 3. Find actual usages in the codebase
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+      };
       const activeToken = getJwtToken();
       if (activeToken) {
         headers['Authorization'] = `Bearer ${activeToken}`;
@@ -1134,18 +1165,18 @@ export default function App() {
         <div className="flex items-center gap-4 shrink-0">
           <button 
             onClick={() => setView('home')}
-            className="group relative p-1 bg-brand-primary/10 rounded-xl border border-brand-primary/20 shadow-2xl shadow-brand-primary/10 hover:scale-105 active:scale-95 transition-all overflow-hidden"
+            className="group relative p-1 bg-brand-primary/20 rounded-xl border border-brand-primary/30 shadow-2xl shadow-brand-primary/10 hover:scale-105 active:scale-95 transition-all overflow-hidden"
           >
             <img 
               src="https://chatgpt.com/backend-api/estuary/public_content/enc/eyJpZCI6Im1fNjljNDE3YzcxMDk4ODE5MWJlNmM2YmIzMDVjMTc5MWM6ZmlsZV8wMDAwMDAwMDI2Yjg3MWZhOWMzMDRmZjBkMTc3NDkzZiIsInRzIjoiMjA1MzciLCJwIjoicHlpIiwiY2lkIjoiMSIsInNpZyI6ImM3MzUyODUyNThmMDIxMWVjNzFjNWMwYzkxYTNiNjYxYzkxN2Y3MDY2YjYwMmU2MjY4MjI4MzJlYmE0MWZlZTMiLCJ2IjoiMCIsImdpem1vX2lkIjpudWxsLCJjcyI6bnVsbCwiY2RuIjpudWxsLCJjcCI6bnVsbCwibWEiOm51bGx9" 
-              alt="GitLens Cursor Logo" 
+              alt="GitLens Logo" 
               className="h-8 w-8 object-contain"
               referrerPolicy="no-referrer"
             />
           </button>
           <div className="flex flex-col">
             <h1 className="font-bold text-base tracking-tight cursor-pointer text-white flex items-center gap-2" onClick={() => setView('home')}>
-              GitLens <span className="text-neutral-500 font-medium">Cursor</span>
+              GitLens
             </h1>
             {repo && (
               <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-500 uppercase tracking-widest mt-0.5">

@@ -1,10 +1,10 @@
-# GitLens Cursor AI Code Visualizer
+# GitLens AI Code Visualizer
 
 An advanced, AI-powered repository explorer and code analysis tool designed to help developers understand complex codebases instantly.
 
 ## 🚀 Overview
 
-GitLens Cursor AI Code Visualizer combines high-performance repository exploration with state-of-the-art Large Language Models. By leveraging **Gemini 3.1 Pro/Flash** and **MongoDB Atlas Vector Search**, it provides a "RAG-first" (Retrieval-Augmented Generation) experience that allows you to chat with your code, visualize dependencies, and trace function flows in real-time.
+GitLens AI Code Visualizer combines high-performance repository exploration with state-of-the-art Large Language Models. By leveraging **Gemini 3.1 Pro/Flash** and **MongoDB Atlas Vector Search**, it provides a "RAG-first" (Retrieval-Augmented Generation) experience that allows you to chat with your code, visualize dependencies, and trace function flows in real-time.
 
 ## ✨ Implemented Features
 

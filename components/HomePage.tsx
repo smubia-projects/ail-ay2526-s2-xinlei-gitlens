@@ -63,7 +63,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
         setDbError(healthData.lastError || `Database state: ${healthData.dbStateName}`);
       }
       
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+      };
       if (jwtToken) {
         headers['Authorization'] = `Bearer ${jwtToken}`;
       }
@@ -152,7 +154,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
     
     try {
       const url = `/api/repo?owner=${encodeURIComponent(owner)}&name=${encodeURIComponent(name)}&branch=${encodeURIComponent(branch)}`;
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+      };
       if (jwtToken) {
         headers['Authorization'] = `Bearer ${jwtToken}`;
       }
@@ -201,9 +205,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
       setIsSearching(true);
       try {
         const vector = await embedText(searchQuery);
+        const headers: Record<string, string> = { 
+          'Content-Type': 'application/json',
+          'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+        };
+        if (jwtToken) {
+          headers['Authorization'] = `Bearer ${jwtToken}`;
+        }
         const res = await fetch('/api/repos/search', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ vector, limit: 6 })
         });
         if (res.ok) {
@@ -231,16 +242,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-12 border-b border-white/5 pb-16 pt-8">
           <div className="space-y-6 flex-1">
             <div className="flex items-center gap-3">
-              <div className="p-1 bg-brand-primary/10 rounded-xl border border-brand-primary/20 overflow-hidden">
+              <div className="p-1 bg-brand-primary/20 rounded-xl border border-brand-primary/30 overflow-hidden">
                 <img 
                   src="https://chatgpt.com/backend-api/estuary/public_content/enc/eyJpZCI6Im1fNjljNDE3YzcxMDk4ODE5MWJlNmM2YmIzMDVjMTc5MWM6ZmlsZV8wMDAwMDAwMDI2Yjg3MWZhOWMzMDRmZjBkMTc3NDkzZiIsInRzIjoiMjA1MzciLCJwIjoicHlpIiwiY2lkIjoiMSIsInNpZyI6ImM3MzUyODUyNThmMDIxMWVjNzFjNWMwYzkxYTNiNjYxYzkxN2Y3MDY2YjYwMmU2MjY4MjI4MzJlYmE0MWZlZTMiLCJ2IjoiMCIsImdpem1vX2lkIjpudWxsLCJjcyI6bnVsbCwiY2RuIjpudWxsLCJjcCI6bnVsbCwibWEiOm51bGx9" 
-                  alt="GitLens Cursor Logo" 
+                  alt="GitLens Logo" 
                   className="h-8 w-8 object-contain"
                   referrerPolicy="no-referrer"
                 />
               </div>
               <AnimatedShinyText className="text-[10px] font-black uppercase tracking-[0.4em] m-0 text-neutral-500">
-                GitLens Cursor • v1.0
+                GitLens • v1.0
               </AnimatedShinyText>
             </div>
             <h1 className="text-7xl font-black text-white tracking-tighter uppercase leading-[0.9] text-gradient">

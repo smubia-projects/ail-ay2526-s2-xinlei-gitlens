@@ -14,6 +14,7 @@ const RepoSchema = new mongoose.Schema({
   githubUserId: { type: Number, index: true }, // GitHub ID of the owner
   isPrivate: { type: Boolean, default: false },
   isTemporary: { type: Boolean, default: false },
+  indexedBy: { type: [String], default: [], index: true }, // List of user IDs or guest IDs who have this in their library
   expiresAt: { type: Date, index: { expires: 0 } } // TTL index
 });
 
