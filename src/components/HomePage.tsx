@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { logoBase64 } from '../logoBase64';
 import { Github, Search, Activity, Calendar, ArrowRight, Trash2, RefreshCw, GitBranch, Sparkles, AlertTriangle, Clock, ShieldCheck, Settings, Loader2, Plus, Folder, Link } from 'lucide-react';
 import { RepoStats, RepoOverview, AIConfig } from '../types';
 import { embedText, setAIConfig } from '../services/gemini';
@@ -233,7 +234,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
             <div className="flex items-center gap-3">
               <div className="p-1 bg-brand-primary/10 rounded-xl border border-brand-primary/20 overflow-hidden">
                 <img 
-                  src="https://chatgpt.com/backend-api/estuary/public_content/enc/eyJpZCI6Im1fNjljNDE3YzcxMDk4ODE5MWJlNmM2YmIzMDVjMTc5MWM6ZmlsZV8wMDAwMDAwMDI2Yjg3MWZhOWMzMDRmZjBkMTc3NDkzZiIsInRzIjoiMjA1MzciLCJwIjoicHlpIiwiY2lkIjoiMSIsInNpZyI6ImM3MzUyODUyNThmMDIxMWVjNzFjNWMwYzkxYTNiNjYxYzkxN2Y3MDY2YjYwMmU2MjY4MjI4MzJlYmE0MWZlZTMiLCJ2IjoiMCIsImdpem1vX2lkIjpudWxsLCJjcyI6bnVsbCwiY2RuIjpudWxsLCJjcCI6bnVsbCwibWEiOm51bGx9" 
+                  src={logoBase64} 
                   alt="GitLens Cursor Logo" 
                   className="h-8 w-8 object-contain"
                   referrerPolicy="no-referrer"

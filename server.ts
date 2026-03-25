@@ -7,9 +7,9 @@ import jwt from "jsonwebtoken";
 import axios from "axios";
 import path from "path";
 
-import { RepoModel } from "./models/Repo.js";
-import { SnippetModel } from "./models/Snippet.js";
-import { UserModel } from "./models/User.js";
+import { RepoModel } from "./src/models/Repo.js";
+import { SnippetModel } from "./src/models/Snippet.js";
+import { UserModel } from "./src/models/User.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 
