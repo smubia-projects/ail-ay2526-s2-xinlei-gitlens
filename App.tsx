@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { logoBase64 } from './logoBase64';
 import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode, Settings, Copy, Check } from 'lucide-react';
 import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
@@ -1136,7 +1135,7 @@ export default function App() {
             className="group relative p-1 bg-white rounded-xl shadow-2xl shadow-white/10 hover:scale-105 active:scale-95 transition-all overflow-hidden"
           >
             <img 
-              src={logoBase64} 
+              src="/logo.png" 
               alt="GitLens Cursor Logo" 
               className="h-8 w-8 object-contain"
               referrerPolicy="no-referrer"
