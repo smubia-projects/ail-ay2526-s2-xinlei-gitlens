@@ -772,17 +772,22 @@ export const embedText = async (text: string): Promise<number[]> => {
       const apiKey = currentConfig.apiKey;
       const model = currentConfig.embeddingModel || 'text-embedding-3-small';
 
+      const payload: any = {
+        input: text,
+        model
+      };
+
+      if (model.includes('text-embedding-3')) {
+        payload.dimensions = 768;
+      }
+
       const response = await fetch(`${baseUrl}/embeddings`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          input: text,
-          model,
-          dimensions: 768
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -791,7 +796,11 @@ export const embedText = async (text: string): Promise<number[]> => {
       }
 
       const data = await response.json();
-      return Array.isArray(data?.data) && data.data.length > 0 ? data.data[0].embedding : [];
+      let embedding = Array.isArray(data?.data) && data.data.length > 0 ? data.data[0].embedding : [];
+      if (embedding.length > 768) {
+        embedding = embedding.slice(0, 768);
+      }
+      return embedding;
     } catch (err) {
       console.error("OpenAI Embedding failed:", err);
       return [];

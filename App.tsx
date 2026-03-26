@@ -394,6 +394,17 @@ export default function App() {
       setError('Invalid GitHub URL format.');
       return;
     }
+
+    let skipIndexing = false;
+    if (!aiConfig.apiKey) {
+      const proceed = window.confirm("You haven't set an AI API key in the settings. You can proceed without AI features (indexing will be skipped), or cancel and set up your API key first. Proceed anyway?");
+      if (!proceed) {
+        setShowSettings(true);
+        return;
+      }
+      skipIndexing = true;
+    }
+
     setError(null);
     setIsIndexing(true);
     setOverview(null);
@@ -466,13 +477,22 @@ export default function App() {
       }
 
       setIndexingProgress({ current: 30, total: 100, stage: 'Generating Repository Overview' });
-      const repoMap = await getRepoOverview(tree.map(f => f.path), context);
+      let repoMap: any = {
+        summary: "Repository overview skipped (No AI API Key).",
+        entry_points: [],
+        core_modules: [],
+        architecture_type: "Unknown"
+      };
+      
+      if (!skipIndexing) {
+        repoMap = await getRepoOverview(tree.map(f => f.path), context);
+      }
       setOverview(repoMap);
 
       // 3. Scan entry points for initial highlights
       setIndexingProgress({ current: 40, total: 100, stage: 'Scanning Entry Points' });
       let initialHighlights: any[] = [];
-      if (repoMap.entry_points && repoMap.entry_points.length > 0) {
+      if (!skipIndexing && repoMap.entry_points && repoMap.entry_points.length > 0) {
         const topEntry = repoMap.entry_points[0].path;
         // Verify the file actually exists in our tree to avoid 404
         const exists = tree.some(f => f.path === topEntry);
@@ -493,14 +513,16 @@ export default function App() {
       // 4. Generate Vector Embedding for semantic search
       setIndexingProgress({ current: 50, total: 100, stage: 'Generating Semantic Vector' });
       let vector: number[] = [];
-      try {
-        const summary = repoMap.summary || '';
-        const arch = repoMap.architecture_type || '';
-        const modules = (repoMap.core_modules || []).map(m => m.description || '').join(' ');
-        const embeddingText = `${summary} ${arch} ${modules}`;
-        vector = await embedText(embeddingText);
-      } catch (e) {
-        console.warn("Failed to generate embedding", e);
+      if (!skipIndexing) {
+        try {
+          const summary = repoMap.summary || '';
+          const arch = repoMap.architecture_type || '';
+          const modules = (repoMap.core_modules || []).map((m: any) => m.description || '').join(' ');
+          const embeddingText = `${summary} ${arch} ${modules}`;
+          vector = await embedText(embeddingText);
+        } catch (e) {
+          console.warn("Failed to generate embedding", e);
+        }
       }
 
       // Calculate stats
@@ -564,7 +586,7 @@ export default function App() {
       }
 
         // 6. Deep Indexing: Chunk and Embed files for RAG
-        if (repoId) {
+        if (repoId && !skipIndexing) {
           console.log("Starting deep indexing for snippets...");
           const codeFiles = tree.filter(f => 
             f.type === 'blob' && 

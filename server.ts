@@ -219,12 +219,28 @@ async function startServer() {
           ? (aiConfig.flashModel || defaultFlash) 
           : (aiConfig.proModel || defaultPro));
         
+        let messages: any[] = [];
+        if (Array.isArray(contents)) {
+          messages = contents.map((c: any) => {
+            if (typeof c === 'string') return { role: 'user', content: c };
+            return {
+              role: c.role === 'model' ? 'assistant' : (c.role || 'user'),
+              content: c.parts ? c.parts.map((p: any) => p.text).join('\n') : (c.text || JSON.stringify(c))
+            };
+          });
+        } else if (typeof contents === 'string') {
+          messages = [{ role: 'user', content: contents }];
+        } else if (contents && contents.parts) {
+          messages = [{ role: 'user', content: contents.parts.map((p: any) => p.text).join('\n') }];
+        } else if (prompt) {
+          messages = [{ role: 'user', content: prompt }];
+        } else {
+          messages = [{ role: 'user', content: JSON.stringify(contents) }];
+        }
+
         const response = await axios.post(`${baseUrl}/chat/completions`, {
           model: chatModel,
-          messages: contents ? contents.map((c: any) => ({
-            role: c.role === 'model' ? 'assistant' : c.role,
-            content: c.parts[0].text
-          })) : [{ role: 'user', content: prompt }],
+          messages: messages,
           ...requestConfig
         }, {
           headers: {
@@ -275,17 +291,28 @@ async function startServer() {
         const baseUrl = aiConfig.baseUrl || 'https://api.openai.com/v1';
         const embedModel = model || aiConfig.embeddingModel || 'text-embedding-3-small';
         
-        const response = await axios.post(`${baseUrl}/embeddings`, {
+        const payload: any = {
           model: embedModel,
           input: text
-        }, {
+        };
+
+        if (embedModel.includes('text-embedding-3')) {
+          payload.dimensions = 768;
+        }
+        
+        const response = await axios.post(`${baseUrl}/embeddings`, payload, {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json'
           }
         });
         
-        res.json({ embedding: response.data.data[0].embedding });
+        let embedding = response.data.data[0].embedding;
+        if (embedding.length > 768) {
+          embedding = embedding.slice(0, 768);
+        }
+        
+        res.json({ embedding });
       } else {
         res.status(400).json({ error: 'Unsupported AI provider' });
       }
@@ -913,9 +940,12 @@ async function startServer() {
 
   // Vector Search for code snippets
   app.post("/api/search/snippets", async (req: any, res) => {
-    const { vector, owner, name, limit = 10 } = req.body;
+    let { vector, owner, name, limit = 10 } = req.body;
     if (!vector || !Array.isArray(vector)) {
       return res.status(400).json({ error: "Vector array is required" });
+    }
+    if (vector.length > 768) {
+      vector = vector.slice(0, 768);
     }
 
     try {
@@ -972,12 +1002,19 @@ async function startServer() {
       const batchSize = 50;
       console.log(`Indexing ${snippets.length} snippets in batches of ${batchSize}...`);
       for (let i = 0; i < snippets.length; i += batchSize) {
-        const batch = snippets.slice(i, i + batchSize).map((s: any) => ({
-          ...s,
-          repoId,
-          owner,
-          name
-        }));
+        const batch = snippets.slice(i, i + batchSize).map((s: any) => {
+          let embedding = s.embedding;
+          if (Array.isArray(embedding) && embedding.length > 768) {
+            embedding = embedding.slice(0, 768);
+          }
+          return {
+            ...s,
+            embedding,
+            repoId,
+            owner,
+            name
+          };
+        });
         console.log(`Inserting batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(snippets.length / batchSize)}...`);
         await SnippetModel.insertMany(batch);
       }
