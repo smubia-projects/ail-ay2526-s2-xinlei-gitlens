@@ -279,7 +279,7 @@ const extractJson = (text: string): any => {
   }
 };
 
-export const getRepoOverview = async (fileList: string[], context?: string, retries = 1): Promise<RepoOverview> => {
+export const getRepoOverview = async (fileList: string[], context?: string): Promise<RepoOverview> => {
   console.time("getRepoOverview");
   const model = currentConfig.flashModel || "gemini-3-flash-preview";
   try {
@@ -288,7 +288,7 @@ export const getRepoOverview = async (fileList: string[], context?: string, retr
       contents: `Analyze the following file list and project context to provide a high-level structural overview of the repository:
       
       FILE LIST:
-      ${fileList.slice(0, 500).join("\n")}
+      ${fileList.slice(0, 1000).join("\n")}
       
       PROJECT CONTEXT (e.g. package.json or README):
       ${context || "N/A"}`,
@@ -315,10 +315,6 @@ export const getRepoOverview = async (fileList: string[], context?: string, retr
       } as RepoOverview;
     } catch (parseError) {
       console.error("Failed to parse repo overview JSON", parseError);
-      if (retries > 0) {
-        console.log(`Retrying getRepoOverview... (${retries} retries left)`);
-        return getRepoOverview(fileList, context, retries - 1);
-      }
       return {
         summary: "Failed to generate repository overview due to a parsing error.",
         entry_points: [],
@@ -328,10 +324,6 @@ export const getRepoOverview = async (fileList: string[], context?: string, retr
     }
   } catch (err) {
     console.error("Failed to get repo overview", err);
-    if (retries > 0) {
-      console.log(`Retrying getRepoOverview after error... (${retries} retries left)`);
-      return getRepoOverview(fileList, context, retries - 1);
-    }
     return {
       summary: "Failed to generate repository overview.",
       entry_points: [],
@@ -350,8 +342,7 @@ export const analyzeCode = async (
   overview: RepoOverview | null,
   useFlash: boolean = false,
   snippets: any[] = [],
-  attachedFiles: { path: string; content: string }[] = [],
-  retries = 1
+  attachedFiles: { path: string; content: string }[] = []
 ): Promise<AnalysisResult> => {
   console.time("analyzeCode");
   const model = useFlash 
@@ -417,12 +408,7 @@ export const analyzeCode = async (
 
     console.timeEnd("analyzeCode");
     try {
-      let result: any = extractJson(jsonStr);
-
-      // Handle cases where the model returns { text: "..." } instead of { answer_markdown: "..." }
-      if (result.text && !result.answer_markdown) {
-        result.answer_markdown = result.text;
-      }
+      let result: AnalysisResult = extractJson(jsonStr);
 
       // Sanitize line numbers to prevent overflows or hallucinations
       const sanitizeLine = (n: any) => {
@@ -432,13 +418,13 @@ export const analyzeCode = async (
       };
 
       if (Array.isArray(result.highlights)) {
-        result.highlights = result.highlights.map((h: any) => ({
+        result.highlights = result.highlights.map(h => ({
           ...h,
           file: typeof h.file === 'string' ? h.file : 'unknown',
           function_name: typeof h.function_name === 'string' && h.function_name !== 'N/A' && h.function_name.trim() !== '' ? h.function_name : undefined,
           start: sanitizeLine(h.start),
           end: sanitizeLine(h.end),
-          usage_examples: Array.isArray(h.usage_examples) ? h.usage_examples.map((ex: any) => ({
+          usage_examples: Array.isArray(h.usage_examples) ? h.usage_examples.map(ex => ({
             ...ex,
             file: typeof ex.file === 'string' ? ex.file : 'unknown',
             line: sanitizeLine(ex.line)
@@ -449,7 +435,7 @@ export const analyzeCode = async (
       }
 
       if (Array.isArray(result.related)) {
-        result.related = result.related.map((r: any) => ({
+        result.related = result.related.map(r => ({
           ...r,
           file: typeof r.file === 'string' ? r.file : 'unknown',
           start: sanitizeLine(r.start),
@@ -467,10 +453,6 @@ export const analyzeCode = async (
       };
     } catch (e) {
       console.error("Failed to parse Gemini response as JSON:", jsonStr);
-      if (retries > 0) {
-        console.log(`Retrying analyzeCode... (${retries} retries left)`);
-        return analyzeCode(query, currentFile, fileList, overview, useFlash, snippets, attachedFiles, retries - 1);
-      }
       // If parsing fails, don't just dump the raw JSON into the answer
       const fallbackMessage = "I encountered an error parsing the analysis. This can happen if the response was too complex or contained invalid data. Please try asking a more specific question.";
       
@@ -483,10 +465,6 @@ export const analyzeCode = async (
     }
   } catch (err: any) {
     console.timeEnd("analyzeCode");
-    if (retries > 0) {
-      console.log(`Retrying analyzeCode after error... (${retries} retries left)`);
-      return analyzeCode(query, currentFile, fileList, overview, useFlash, snippets, attachedFiles, retries - 1);
-    }
     throw err;
   }
 };
@@ -544,8 +522,7 @@ export const getSymbolDependencies = async (
   symbolName: string,
   filePath: string,
   fileList: string[],
-  overview: RepoOverview | null,
-  retries = 1
+  overview: RepoOverview | null
 ): Promise<any> => {
   const response = await callGemini({
     model: "gemini-3-flash-preview",
@@ -601,18 +578,13 @@ export const getSymbolDependencies = async (
     };
   } catch (e) {
     console.error("Failed to parse symbol dependencies JSON", e);
-    if (retries > 0) {
-      console.log(`Retrying getSymbolDependencies... (${retries} retries left)`);
-      return getSymbolDependencies(symbolName, filePath, fileList, overview, retries - 1);
-    }
     return { nodes: [], links: [] };
   }
 };
 
 export const analyzeFileSymbols = async (
   filename: string,
-  content: string,
-  retries = 1
+  content: string
 ): Promise<any[]> => {
   const response = await callGemini({
     model: "gemini-3-flash-preview",
@@ -695,18 +667,13 @@ export const analyzeFileSymbols = async (
     return symbols;
   } catch (e) {
     console.error("Failed to parse symbols JSON", e);
-    if (retries > 0) {
-      console.log(`Retrying analyzeFileSymbols... (${retries} retries left)`);
-      return analyzeFileSymbols(filename, content, retries - 1);
-    }
     return [];
   }
 };
 
 export const getUsageExamples = async (
   symbolName: string,
-  usages: { file: string; line: number; context: string }[],
-  retries = 1
+  usages: { file: string; line: number; context: string }[]
 ): Promise<any[]> => {
   if (usages.length === 0) return [];
 
@@ -750,10 +717,6 @@ export const getUsageExamples = async (
     return Array.isArray(data) ? data : (data.examples || []);
   } catch (e) {
     console.error("Failed to parse usage examples JSON", e);
-    if (retries > 0) {
-      console.log(`Retrying getUsageExamples... (${retries} retries left)`);
-      return getUsageExamples(symbolName, usages, retries - 1);
-    }
     return [];
   }
 };
@@ -813,7 +776,7 @@ export const embedText = async (text: string): Promise<number[]> => {
         input: text,
         model
       };
-
+      
       if (model.includes('text-embedding-3')) {
         payload.dimensions = 768;
       }
@@ -833,11 +796,7 @@ export const embedText = async (text: string): Promise<number[]> => {
       }
 
       const data = await response.json();
-      let embedding = Array.isArray(data?.data) && data.data.length > 0 ? data.data[0].embedding : [];
-      if (embedding.length > 768) {
-        embedding = embedding.slice(0, 768);
-      }
-      return embedding;
+      return Array.isArray(data?.data) && data.data.length > 0 ? data.data[0].embedding : [];
     } catch (err) {
       console.error("OpenAI Embedding failed:", err);
       return [];

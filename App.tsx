@@ -20,30 +20,12 @@ const FormattedText = ({ text, onFileClick }: { text: string; onFileClick?: (pat
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const components = {
-    code({ node, inline, className, children, ...props }: any) {
-      const content = String(children).replace(/\n$/, '');
-      const isPath = /^[a-zA-Z0-9._\-\/]+\.[a-zA-Z0-9]+$/.test(content);
-      
-      if (inline && isPath && onFileClick) {
-        return (
-          <button 
-            onClick={() => onFileClick(content)}
-            className="bg-brand-primary/10 text-brand-primary px-2 py-0.5 rounded-lg mono text-[11px] font-bold border border-brand-primary/20 hover:bg-brand-primary/20 transition-all cursor-pointer inline-flex items-center gap-1.5"
-          >
-            <FileCode size={12} />
-            {content}
-          </button>
-        );
+    pre({ children, ...props }: any) {
+      let content = '';
+      if (children && children.props && children.props.children) {
+        content = String(children.props.children).replace(/\n$/, '');
       }
       
-      if (inline) {
-        return (
-          <code className={`${className} bg-white/5 text-neutral-300 px-1.5 py-0.5 rounded-md mono text-[11px] font-medium border border-white/10`} {...props}>
-            {children}
-          </code>
-        );
-      }
-
       return (
         <div className="relative group mt-4 mb-4">
           <div className="absolute top-3 right-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
@@ -68,13 +50,44 @@ const FormattedText = ({ text, onFileClick }: { text: string; onFileClick?: (pat
               </div>
               <div className="text-[9px] font-bold text-neutral-600 uppercase tracking-widest">Code Block</div>
             </div>
-            <pre className="!mt-0 !mb-0 p-4 overflow-x-auto custom-scrollbar">
-              <code className={`${className} block mono text-[12px] leading-relaxed text-neutral-300`} {...props}>
-                {children}
-              </code>
+            <pre className="!mt-0 !mb-0 p-4 overflow-x-auto custom-scrollbar" {...props}>
+              {children}
             </pre>
           </div>
         </div>
+      );
+    },
+    code({ node, className, children, ...props }: any) {
+      const content = String(children).replace(/\n$/, '');
+      const isPath = /^[a-zA-Z0-9._\-\/]+\.[a-zA-Z0-9]+$/.test(content);
+      
+      const match = /language-(\w+)/.exec(className || '');
+      const isBlock = match || String(children).includes('\n');
+
+      if (isBlock) {
+        return (
+          <code className={`${className || ''} block mono text-[12px] leading-relaxed text-neutral-300`} {...props}>
+            {children}
+          </code>
+        );
+      }
+      
+      if (isPath && onFileClick) {
+        return (
+          <button 
+            onClick={() => onFileClick(content)}
+            className="bg-brand-primary/10 text-brand-primary px-2 py-0.5 rounded-lg mono text-[11px] font-bold border border-brand-primary/20 hover:bg-brand-primary/20 transition-all cursor-pointer inline-flex items-center gap-1.5"
+          >
+            <FileCode size={12} />
+            {content}
+          </button>
+        );
+      }
+      
+      return (
+        <code className={`${className || ''} bg-white/5 text-neutral-300 px-1.5 py-0.5 rounded-md mono text-[11px] font-medium border border-white/10`} {...props}>
+          {children}
+        </code>
       );
     }
   };
@@ -130,12 +143,6 @@ export default function App() {
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
 
   const getJwtToken = () => {
     return jwtToken || localStorage.getItem('gitlens_token');
@@ -200,6 +207,7 @@ export default function App() {
   const [currentSources, setCurrentSources] = useState<{ path: string; startLine: number; endLine: number }[]>([]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
+
   const [activeTab, setActiveTab] = useState<'code' | 'map' | 'dashboard' | 'logic'>('code');
   const [sidebarTab, setSidebarTab] = useState<'map' | 'focus' | 'chat'>('map');
   const [view, setView] = useState<'home' | 'repo'>('home');
@@ -209,6 +217,19 @@ export default function App() {
   const [githubUser, setGithubUser] = useState<any>(null);
   const [githubToken, setGithubToken] = useState<string | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    if (!messagesContainerRef.current || !scrollRef.current) return;
+    
+    const observer = new ResizeObserver(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
+    
+    observer.observe(messagesContainerRef.current);
+    return () => observer.disconnect();
+  }, [sidebarTab]);
 
   useEffect(() => {
     // Generate or retrieve guest ID for anonymous tracking
@@ -380,12 +401,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isLoading, isIndexing]);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isLoading, focusedFunction]);
-
   const handleFetchRepo = async (forceRefresh = false, overrideUrl?: string) => {
     console.time("handleFetchRepo");
     const targetUrl = overrideUrl || url;
@@ -394,17 +409,6 @@ export default function App() {
       setError('Invalid GitHub URL format.');
       return;
     }
-
-    let skipIndexing = false;
-    if (!aiConfig.apiKey) {
-      const proceed = window.confirm("You haven't set an AI API key in the settings. You can proceed without AI features (indexing will be skipped), or cancel and set up your API key first. Proceed anyway?");
-      if (!proceed) {
-        setIsSettingsOpen(true);
-        return;
-      }
-      skipIndexing = true;
-    }
-
     setError(null);
     setIsIndexing(true);
     setOverview(null);
@@ -477,22 +481,13 @@ export default function App() {
       }
 
       setIndexingProgress({ current: 30, total: 100, stage: 'Generating Repository Overview' });
-      let repoMap: any = {
-        summary: "Repository overview skipped (No AI API Key).",
-        entry_points: [],
-        core_modules: [],
-        architecture_type: "Unknown"
-      };
-      
-      if (!skipIndexing) {
-        repoMap = await getRepoOverview(tree.map(f => f.path), context);
-      }
+      const repoMap = await getRepoOverview(tree.map(f => f.path), context);
       setOverview(repoMap);
 
       // 3. Scan entry points for initial highlights
       setIndexingProgress({ current: 40, total: 100, stage: 'Scanning Entry Points' });
       let initialHighlights: any[] = [];
-      if (!skipIndexing && repoMap.entry_points && repoMap.entry_points.length > 0) {
+      if (repoMap.entry_points && repoMap.entry_points.length > 0) {
         const topEntry = repoMap.entry_points[0].path;
         // Verify the file actually exists in our tree to avoid 404
         const exists = tree.some(f => f.path === topEntry);
@@ -513,16 +508,14 @@ export default function App() {
       // 4. Generate Vector Embedding for semantic search
       setIndexingProgress({ current: 50, total: 100, stage: 'Generating Semantic Vector' });
       let vector: number[] = [];
-      if (!skipIndexing) {
-        try {
-          const summary = repoMap.summary || '';
-          const arch = repoMap.architecture_type || '';
-          const modules = (repoMap.core_modules || []).map((m: any) => m.description || '').join(' ');
-          const embeddingText = `${summary} ${arch} ${modules}`;
-          vector = await embedText(embeddingText);
-        } catch (e) {
-          console.warn("Failed to generate embedding", e);
-        }
+      try {
+        const summary = repoMap.summary || '';
+        const arch = repoMap.architecture_type || '';
+        const modules = (repoMap.core_modules || []).map(m => m.description || '').join(' ');
+        const embeddingText = `${summary} ${arch} ${modules}`;
+        vector = await embedText(embeddingText);
+      } catch (e) {
+        console.warn("Failed to generate embedding", e);
       }
 
       // Calculate stats
@@ -586,7 +579,7 @@ export default function App() {
       }
 
         // 6. Deep Indexing: Chunk and Embed files for RAG
-        if (repoId && !skipIndexing) {
+        if (repoId) {
           console.log("Starting deep indexing for snippets...");
           const codeFiles = tree.filter(f => 
             f.type === 'blob' && 
@@ -1684,7 +1677,7 @@ export default function App() {
             )}
 
             {sidebarTab === 'chat' && (
-              <div className="flex flex-col gap-6 animate-in fade-in duration-300 overflow-y-auto h-full" ref={messagesContainerRef}>
+              <div className="flex flex-col gap-6 animate-in fade-in duration-300" ref={messagesContainerRef}>
                 {isLoading && currentSources.length > 0 && (
                   <div className="flex items-center gap-2 text-[10px] text-emerald-500 font-bold uppercase tracking-widest animate-pulse px-2">
                     <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
@@ -1793,7 +1786,7 @@ export default function App() {
               </div>
             )}
             
-            {isLoading && (
+            {isLoading && sidebarTab !== 'chat' && (
               <div className="flex flex-col gap-4 animate-pulse opacity-40 shrink-0">
                 <div className="h-4 bg-neutral-800 rounded-full w-1/2" />
                 <div className="h-32 bg-neutral-800 rounded-2xl w-full" />

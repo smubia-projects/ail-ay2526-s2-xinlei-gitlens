@@ -201,14 +201,12 @@ async function startServer() {
         if (contents) {
           result = await ai.models.generateContent({ 
             model: modelName,
-            contents,
-            config: requestConfig
+            contents 
           });
         } else {
           result = await ai.models.generateContent({
             model: modelName,
-            contents: [{ parts: [{ text: prompt }] }],
-            config: requestConfig
+            contents: [{ parts: [{ text: prompt }] }]
           });
         }
         
@@ -221,29 +219,40 @@ async function startServer() {
           ? (aiConfig.flashModel || defaultFlash) 
           : (aiConfig.proModel || defaultPro));
         
-        let messages: any[] = [];
-        if (Array.isArray(contents)) {
-          messages = contents.map((c: any) => {
-            if (typeof c === 'string') return { role: 'user', content: c };
-            return {
-              role: c.role === 'model' ? 'assistant' : (c.role || 'user'),
-              content: c.parts ? c.parts.map((p: any) => p.text).join('\n') : (c.text || JSON.stringify(c))
-            };
-          });
-        } else if (typeof contents === 'string') {
-          messages = [{ role: 'user', content: contents }];
-        } else if (contents && contents.parts) {
-          messages = [{ role: 'user', content: contents.parts.map((p: any) => p.text).join('\n') }];
-        } else if (prompt) {
-          messages = [{ role: 'user', content: prompt }];
-        } else {
-          messages = [{ role: 'user', content: JSON.stringify(contents) }];
+        const messages = Array.isArray(contents) ? contents.map((c: any) => ({
+          role: c.role === 'model' ? 'assistant' : (c.role || 'user'),
+          content: c.parts ? c.parts[0].text : (c.text || JSON.stringify(c))
+        })) : [{ role: 'user', content: prompt || contents }];
+
+        let sysContent = typeof requestConfig?.systemInstruction === 'string' 
+          ? requestConfig.systemInstruction 
+          : (requestConfig?.systemInstruction?.parts ? requestConfig.systemInstruction.parts[0].text : (requestConfig?.systemInstruction ? JSON.stringify(requestConfig.systemInstruction) : undefined));
+        
+        if (requestConfig?.responseMimeType === 'application/json') {
+          if (!sysContent) sysContent = "";
+          if (!sysContent.toLowerCase().includes('json')) {
+            sysContent += "\n\nIMPORTANT: You must return the response in valid JSON format.";
+          }
+          if (requestConfig?.responseSchema) {
+            sysContent += `\n\nYour JSON response MUST strictly adhere to the following JSON Schema:\n${JSON.stringify(requestConfig.responseSchema, null, 2)}`;
+          }
         }
+
+        if (sysContent) {
+          messages.unshift({ role: 'system', content: sysContent });
+        }
+
+        const openAiConfig: any = {};
+        if (requestConfig?.responseMimeType === 'application/json') {
+          openAiConfig.response_format = { type: 'json_object' };
+        }
+        if (requestConfig?.temperature !== undefined) openAiConfig.temperature = requestConfig.temperature;
+        if (requestConfig?.maxOutputTokens !== undefined) openAiConfig.max_tokens = requestConfig.maxOutputTokens;
 
         const response = await axios.post(`${baseUrl}/chat/completions`, {
           model: chatModel,
-          messages: messages,
-          ...requestConfig
+          messages,
+          ...openAiConfig
         }, {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -295,13 +304,13 @@ async function startServer() {
         
         const payload: any = {
           model: embedModel,
-          input: text.length > 30000 ? text.substring(0, 30000) : text
+          input: text
         };
-
+        
         if (embedModel.includes('text-embedding-3')) {
           payload.dimensions = 768;
         }
-        
+
         const response = await axios.post(`${baseUrl}/embeddings`, payload, {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -309,12 +318,7 @@ async function startServer() {
           }
         });
         
-        let embedding = response.data.data[0].embedding;
-        if (embedding.length > 768) {
-          embedding = embedding.slice(0, 768);
-        }
-        
-        res.json({ embedding });
+        res.json({ embedding: response.data.data[0].embedding });
       } else {
         res.status(400).json({ error: 'Unsupported AI provider' });
       }
@@ -942,12 +946,9 @@ async function startServer() {
 
   // Vector Search for code snippets
   app.post("/api/search/snippets", async (req: any, res) => {
-    let { vector, owner, name, limit = 10 } = req.body;
+    const { vector, owner, name, limit = 10 } = req.body;
     if (!vector || !Array.isArray(vector)) {
       return res.status(400).json({ error: "Vector array is required" });
-    }
-    if (vector.length > 768) {
-      vector = vector.slice(0, 768);
     }
 
     try {
@@ -1004,19 +1005,12 @@ async function startServer() {
       const batchSize = 50;
       console.log(`Indexing ${snippets.length} snippets in batches of ${batchSize}...`);
       for (let i = 0; i < snippets.length; i += batchSize) {
-        const batch = snippets.slice(i, i + batchSize).map((s: any) => {
-          let embedding = s.embedding;
-          if (Array.isArray(embedding) && embedding.length > 768) {
-            embedding = embedding.slice(0, 768);
-          }
-          return {
-            ...s,
-            embedding,
-            repoId,
-            owner,
-            name
-          };
-        });
+        const batch = snippets.slice(i, i + batchSize).map((s: any) => ({
+          ...s,
+          repoId,
+          owner,
+          name
+        }));
         console.log(`Inserting batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(snippets.length / batchSize)}...`);
         await SnippetModel.insertMany(batch);
       }
