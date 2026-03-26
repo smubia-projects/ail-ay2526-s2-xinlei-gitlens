@@ -100,6 +100,19 @@ const ANALYSIS_SCHEMA = {
         required: ["symbol", "file", "start", "end"],
       },
     },
+    context_bundles: {
+      type: Type.ARRAY,
+      description: "Suggested groups of related files that define a specific feature or logic path.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING, description: "Short title for the feature (e.g. 'User Authentication')" },
+          description: { type: Type.STRING, description: "Why these files are related." },
+          files: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of file paths." }
+        },
+        required: ["title", "description", "files"]
+      }
+    }
   },
   required: ["answer_markdown", "highlights", "related"],
 };
@@ -389,6 +402,7 @@ export const analyzeCode = async (
       16. RELEVANCE CHECK: Before using a code snippet, verify it actually relates to the user's question. If the user asks about 'posts' but the snippets are about 'votes', do not force a connection. Use the 'FILES IN REPO' list to find more relevant files if the snippets are off-target.
       17. ANSWER THE LAST QUESTION: Your primary task is to answer the most recent question from the user. Use the chat history ONLY for context (e.g., to resolve pronouns like 'it' or 'that'). Do not repeat information from previous turns unless it is directly relevant to the new question. If the user switches topics (e.g., from 'voting' to 'posts'), focus entirely on the new topic.
       18. IF NO SNIPPETS ARE PROVIDED: If 'RELEVANT CODE SNIPPETS' is 'N/A' and the information is not in the 'CURRENT OPEN FILE' or 'ATTACHED FILES', state that you do not have enough information to answer specifically about the code logic, but you can see the files exist in the 'FILES IN REPO' list. DO NOT guess the implementation details.
+      19. CONTEXT BUNDLES: Suggest 1-3 'context_bundles' that group related files defining a specific feature or logic path (e.g., a frontend component, its backend controller, and its database model). This helps the user understand the 'connective tissue' of the project.
     `;
 
     const response = await callGemini({
@@ -754,6 +768,23 @@ export const summarizeFile = async (path: string, content: string): Promise<stri
   } catch (err) {
     console.warn(`Failed to summarize ${path}`, err);
     return "Code file.";
+  }
+};
+
+export const summarizeSnippet = async (path: string, content: string): Promise<string> => {
+  const model = currentConfig.flashModel || "gemini-3-flash-preview";
+  try {
+    const response = await callGemini({
+      model: model,
+      contents: `Provide a very brief (max 10 words) summary of what this specific code snippet in ${path} does.\n\nSNIPPET:\n${content}`,
+      config: {
+        systemInstruction: "You are a technical documentation expert. Provide a concise purpose for the code snippet.",
+      },
+    });
+    return response.text?.trim() || "Code snippet.";
+  } catch (err) {
+    console.warn(`Failed to summarize snippet in ${path}`, err);
+    return "Code snippet.";
   }
 };
 

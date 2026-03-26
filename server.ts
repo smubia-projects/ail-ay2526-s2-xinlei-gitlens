@@ -976,6 +976,7 @@ async function startServer() {
           $project: {
             path: 1,
             content: 1,
+            purpose: 1,
             startLine: 1,
             endLine: 1,
             score: { $meta: "vectorSearchScore" }

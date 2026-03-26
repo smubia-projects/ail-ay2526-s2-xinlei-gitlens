@@ -6,6 +6,7 @@ const SnippetSchema = new mongoose.Schema({
   name: { type: String, required: true },
   path: { type: String, required: true },
   content: { type: String, required: true },
+  purpose: { type: String },
   startLine: { type: Number, required: true },
   endLine: { type: Number, required: true },
   embedding: { type: [Number], required: true },

@@ -5,7 +5,7 @@ import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
 import { Repository, RepoFile, ChatMessage, AnalysisResult, Highlight, RepoOverview, DependencyGraphData, RepoStats, AIConfig } from './types';
 import { parseRepoUrl, fetchRepoTree, fetchFileContent } from './services/github';
-import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples, summarizeFile, setAIConfig } from './services/gemini';
+import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples, summarizeFile, summarizeSnippet, setAIConfig } from './services/gemini';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -616,15 +616,16 @@ export default function App() {
                   const chunkContent = chunkLines.join('\n');
                   if (chunkContent.trim().length < 50) continue;
 
-                  // Prepend file path AND the file summary to the chunk content
-                  const embeddingText = `File: ${file.path}\nSummary: ${fileSummary}\n\nCode:\n${chunkContent}`;
-                  
                   chunkPromises.push((async () => {
+                    const chunkPurpose = await summarizeSnippet(file.path, chunkContent);
+                    const embeddingText = `File: ${file.path}\nSummary: ${fileSummary}\nPurpose: ${chunkPurpose}\n\nCode:\n${chunkContent}`;
                     const chunkEmbedding = await embedText(embeddingText);
+                    
                     if (chunkEmbedding.length > 0) {
                       return {
                         path: file.path,
                         content: chunkContent,
+                        purpose: chunkPurpose,
                         startLine: j + 1,
                         endLine: j + chunkLines.length,
                         embedding: chunkEmbedding
@@ -946,6 +947,25 @@ export default function App() {
 
   const handleDragLeave = () => {
     setIsDragging(false);
+  };
+
+  const handleLoadBundle = async (bundle: { title: string; files: string[] }) => {
+    setIsLoading(true);
+    try {
+      const bundleFiles: RepoFile[] = [];
+      for (const path of bundle.files) {
+        if (attachedFiles.some(af => af.path === path)) continue;
+        const { content } = await fetchFileContent(repo!, path, githubToken || undefined);
+        bundleFiles.push({ path, content, type: 'blob', sha: '', url: '' });
+      }
+      setAttachedFiles(prev => [...prev, ...bundleFiles]);
+      setError(null);
+    } catch (err: any) {
+      console.error("Failed to load bundle:", err);
+      setError(`Failed to load context bundle: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleNavigate = useCallback((path: string, line?: number, highlight?: Highlight) => {
@@ -1755,6 +1775,37 @@ export default function App() {
                             </div>
                           )}
                           
+                          {m.analysis.context_bundles && m.analysis.context_bundles.length > 0 && (
+                            <div className="bg-brand-primary/5 rounded-2xl p-4 border border-brand-primary/20 shadow-inner">
+                              <div className="flex items-center gap-2 text-[9px] font-bold text-brand-primary mb-3 uppercase tracking-widest">
+                                <Layers size={12} /> Suggested Context Bundles
+                              </div>
+                              <div className="flex flex-col gap-2">
+                                {m.analysis.context_bundles.map((bundle, bIdx) => (
+                                  <div key={bIdx} className="p-3 rounded-xl bg-black/40 border border-white/5 hover:border-brand-primary/30 transition-all group/bundle">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <div className="text-[11px] font-bold text-neutral-200 group-hover/bundle:text-brand-primary transition-colors">{bundle.title}</div>
+                                      <button 
+                                        onClick={() => handleLoadBundle(bundle)}
+                                        className="text-[9px] px-2 py-1 bg-brand-primary/10 text-brand-primary rounded-lg border border-brand-primary/20 hover:bg-brand-primary/20 transition-all font-bold uppercase tracking-widest"
+                                      >
+                                        Load Context
+                                      </button>
+                                    </div>
+                                    <p className="text-[10px] text-neutral-500 leading-relaxed mb-2">{bundle.description}</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {bundle.files.map((f, fIdx) => (
+                                        <span key={fIdx} className="text-[8px] px-1.5 py-0.5 bg-white/5 text-neutral-600 rounded border border-white/5 mono">
+                                          {f.split('/').pop()}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           {m.analysis.highlights && m.analysis.highlights.length > 0 && (
                             <div className="flex flex-col gap-2">
                               <div className="text-[9px] font-bold text-neutral-600 uppercase pl-2 tracking-widest mb-1">Identified Focus</div>

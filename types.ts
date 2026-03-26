@@ -76,6 +76,11 @@ export interface AnalysisResult {
   highlights: Highlight[];
   call_tree_markdown?: string;
   related: RelatedSymbol[];
+  context_bundles?: {
+    title: string;
+    description: string;
+    files: string[];
+  }[];
 }
 
 export interface ChatMessage {
