@@ -201,12 +201,14 @@ async function startServer() {
         if (contents) {
           result = await ai.models.generateContent({ 
             model: modelName,
-            contents 
+            contents,
+            config: requestConfig
           });
         } else {
           result = await ai.models.generateContent({
             model: modelName,
-            contents: [{ parts: [{ text: prompt }] }]
+            contents: [{ parts: [{ text: prompt }] }],
+            config: requestConfig
           });
         }
         
