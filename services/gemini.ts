@@ -288,7 +288,7 @@ export const getRepoOverview = async (fileList: string[], context?: string, retr
       contents: `Analyze the following file list and project context to provide a high-level structural overview of the repository:
       
       FILE LIST:
-      ${fileList.slice(0, 1000).join("\n")}
+      ${fileList.slice(0, 500).join("\n")}
       
       PROJECT CONTEXT (e.g. package.json or README):
       ${context || "N/A"}`,

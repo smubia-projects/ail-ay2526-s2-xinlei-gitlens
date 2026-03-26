@@ -295,7 +295,7 @@ async function startServer() {
         
         const payload: any = {
           model: embedModel,
-          input: text
+          input: text.length > 30000 ? text.substring(0, 30000) : text
         };
 
         if (embedModel.includes('text-embedding-3')) {

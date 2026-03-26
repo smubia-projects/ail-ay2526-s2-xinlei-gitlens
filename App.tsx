@@ -399,7 +399,7 @@ export default function App() {
     if (!aiConfig.apiKey) {
       const proceed = window.confirm("You haven't set an AI API key in the settings. You can proceed without AI features (indexing will be skipped), or cancel and set up your API key first. Proceed anyway?");
       if (!proceed) {
-        setShowSettings(true);
+        setIsSettingsOpen(true);
         return;
       }
       skipIndexing = true;
