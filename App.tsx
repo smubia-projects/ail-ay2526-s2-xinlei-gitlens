@@ -745,7 +745,7 @@ export default function App() {
     });
   };
 
-  const runAnalysis = async (userQuery: string, forceFlash = false) => {
+  const runAnalysis = async (userQuery: string, history: { role: string; content: string }[] = [], forceFlash = false) => {
     console.time("runAnalysis");
     setIsLoading(true);
     setSidebarTab('chat');
@@ -757,7 +757,15 @@ export default function App() {
       let snippets: any[] = [];
       if (repo) {
         try {
-          const queryVector = await embedText(userQuery);
+          // Only use history for search if the current query is short (likely contains pronouns or is a follow-up)
+          // Otherwise, use the current query alone to prevent topic leakage from previous turns.
+          const contextQuery = (history.length > 0 && userQuery.trim().split(/\s+/).length < 6)
+            ? `${history.slice(-1).map(m => m.content).join(' ')} ${userQuery}`
+            : userQuery;
+          
+          console.log(`[AI] Searching snippets for: "${contextQuery}" (Original: "${userQuery}")`);
+          
+          const queryVector = await embedText(contextQuery);
           if (queryVector.length > 0) {
             const headers: Record<string, string> = { 
               'Content-Type': 'application/json',
@@ -779,7 +787,10 @@ export default function App() {
             });
             if (searchRes.ok) {
               snippets = await searchRes.json();
+              console.log(`[AI] Found ${snippets.length} relevant snippets.`);
               setCurrentSources(snippets.map((s: any) => ({ path: s.path, startLine: s.startLine, endLine: s.endLine })));
+            } else {
+              console.warn(`[AI] Semantic search failed with status: ${searchRes.status}`);
             }
           }
         } catch (e) {
@@ -797,7 +808,8 @@ export default function App() {
         overview, 
         forceFlash || aiConfig.useFlash,
         snippets,
-        attachedFiles.map(f => ({ path: f.path, content: f.content || '' }))
+        attachedFiles.map(f => ({ path: f.path, content: f.content || '' })),
+        history
       );
       const analysis = { 
         answer_markdown: rawAnalysis.answer_markdown || "No explanation provided.",
@@ -863,6 +875,7 @@ export default function App() {
     e?.preventDefault();
     if (!query.trim() || !repo) return;
     const userQuery = query;
+    const currentMessages = messages;
     setQuery('');
     setMessages(prev => [...prev, { 
       role: 'user', 
@@ -870,7 +883,7 @@ export default function App() {
       sources: attachedFiles.length > 0 ? attachedFiles.map(f => ({ path: f.path, startLine: 1, endLine: 1 })) : undefined
     }]);
     setFocusedFunction(null);
-    await runAnalysis(userQuery);
+    await runAnalysis(userQuery, currentMessages);
     setAttachedFiles([]); // Clear after sending
   };
 

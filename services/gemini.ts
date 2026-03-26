@@ -293,7 +293,7 @@ export const getRepoOverview = async (fileList: string[], context?: string): Pro
       PROJECT CONTEXT (e.g. package.json or README):
       ${context || "N/A"}`,
       config: {
-        systemInstruction: "You are a lead architect. Your goal is to map out a repository structure for a new developer. Identify the tech stack, core business logic location, and entry points.",
+        systemInstruction: "You are a lead architect. Your goal is to map out a repository structure for a new developer. Identify the tech stack, core business logic location, and entry points. CRITICAL: DO NOT hallucinate or guess file paths, routes, or function names. ONLY use the exact file paths provided in the FILE LIST. If you are unsure about a route or file, state that you cannot find it in the provided context rather than guessing based on standard patterns (e.g., do not guess 'routes/postRoutes.js' if it's not in the file list).",
         responseMimeType: "application/json",
         responseSchema: OVERVIEW_SCHEMA,
       },
@@ -342,7 +342,8 @@ export const analyzeCode = async (
   overview: RepoOverview | null,
   useFlash: boolean = false,
   snippets: any[] = [],
-  attachedFiles: { path: string; content: string }[] = []
+  attachedFiles: { path: string; content: string }[] = [],
+  messages: { role: string; content: string }[] = []
 ): Promise<AnalysisResult> => {
   console.time("analyzeCode");
   const model = useFlash 
@@ -362,6 +363,10 @@ export const analyzeCode = async (
       ? attachedFiles.map(f => `FILE: ${f.path}\n\n${f.content.split('\n').map((line, i) => `${i + 1}: ${line}`).join('\n')}`).join('\n\n---\n\n')
       : 'N/A';
 
+    const historyContext = messages.length > 0
+      ? messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n')
+      : 'No previous history.';
+
     const systemInstruction = `
       You are an expert code architect analyzing a repository.
       
@@ -378,6 +383,12 @@ export const analyzeCode = async (
       10. If the user query is a simple greeting (e.g., "hi", "hello"), provide a brief, friendly response and ask how you can help. Do not generate extensive highlights for greetings.
       11. IMPORTANT: Line numbers (start/end) MUST be realistic integers. Do NOT use placeholder large numbers. If unknown, use 1.
       12. KEEP IT SHORT: The 'answer_markdown' should be concise (max 300 words).
+      13. DO NOT HALLUCINATE OR GUESS file paths, routes, or function names in 'answer_markdown', 'call_tree_markdown', 'highlights', or 'related'. ONLY use the exact file paths provided in 'FILES IN REPO', 'ATTACHED FILES', or 'RELEVANT CODE SNIPPETS'. If you are unsure about a route or file, state that you cannot find it in the provided context rather than guessing based on standard patterns (e.g., do not guess 'routes/postRoutes.js' if it's not in the file list).
+      14. VERIFY FILE PATHS: Before outputting any file path in your response, check if it exists in the 'FILES IN REPO' list. If it does not exist, DO NOT output it. Use the exact names from the list (e.g., use 'controllers/upload-controller.js' instead of guessing 'controllers/postController.js').
+      15. PENALTY FOR HALLUCINATION: Hallucinating file paths that do not exist in the provided context is a critical failure. Stick strictly to the provided facts.
+      16. RELEVANCE CHECK: Before using a code snippet, verify it actually relates to the user's question. If the user asks about 'posts' but the snippets are about 'votes', do not force a connection. Use the 'FILES IN REPO' list to find more relevant files if the snippets are off-target.
+      17. ANSWER THE LAST QUESTION: Your primary task is to answer the most recent question from the user. Use the chat history ONLY for context (e.g., to resolve pronouns like 'it' or 'that'). Do not repeat information from previous turns unless it is directly relevant to the new question. If the user switches topics (e.g., from 'voting' to 'posts'), focus entirely on the new topic.
+      18. IF NO SNIPPETS ARE PROVIDED: If 'RELEVANT CODE SNIPPETS' is 'N/A' and the information is not in the 'CURRENT OPEN FILE' or 'ATTACHED FILES', state that you do not have enough information to answer specifically about the code logic, but you can see the files exist in the 'FILES IN REPO' list. DO NOT guess the implementation details.
     `;
 
     const response = await callGemini({
@@ -385,6 +396,7 @@ export const analyzeCode = async (
       contents: {
         parts: [
           { text: `REPO OVERVIEW: ${overview ? JSON.stringify(overview) : 'N/A'}` },
+          { text: `CHAT HISTORY:\n\n${historyContext}` },
           { text: `CURRENT OPEN FILE (${currentFile?.path || 'None'}): \n\n${contentWithLines}` },
           { text: `ATTACHED FILES (SPECIFICALLY SELECTED BY USER):\n\n${attachedContext}` },
           { text: `RELEVANT CODE SNIPPETS (FROM SEMANTIC SEARCH):\n\n${snippetsContext}` },
@@ -417,6 +429,13 @@ export const analyzeCode = async (
         return Math.floor(num);
       };
 
+      const normalizePath = (p: string) => p.replace(/^\/+/, '').toLowerCase();
+      const validFiles = new Set([
+        ...fileList.map(normalizePath),
+        ...attachedFiles.map(f => normalizePath(f.path)),
+        ...snippets.map(s => normalizePath(s.path))
+      ]);
+
       if (Array.isArray(result.highlights)) {
         result.highlights = result.highlights.map(h => ({
           ...h,
@@ -429,7 +448,7 @@ export const analyzeCode = async (
             file: typeof ex.file === 'string' ? ex.file : 'unknown',
             line: sanitizeLine(ex.line)
           })) : []
-        }));
+        })).filter(h => validFiles.has(normalizePath(h.file)) || h.file === 'unknown');
       } else {
         result.highlights = [];
       }
@@ -440,7 +459,7 @@ export const analyzeCode = async (
           file: typeof r.file === 'string' ? r.file : 'unknown',
           start: sanitizeLine(r.start),
           end: sanitizeLine(r.end)
-        }));
+        })).filter(r => validFiles.has(normalizePath(r.file)) || r.file === 'unknown');
       } else {
         result.related = [];
       }
@@ -489,6 +508,7 @@ export const getFunctionFlow = async (functionName: string, fileContent: string)
       Your goal is to provide a highly structured, visual trace of the function.
       
       CRITICAL: ONLY trace DIRECT function calls and dependencies within the provided file content. DO NOT infer dependencies based on props passed to components or indirect calls through parent components. If a function is called via a prop, note that it is an indirect dependency via the parent, do not list it as a direct call from this component.
+      CRITICAL: DO NOT hallucinate or guess file paths, routes, or function names. ONLY use the exact names provided in the code. If you are unsure about a route or file, state that you cannot find it in the provided context rather than guessing based on standard patterns (e.g., do not guess 'routes/postRoutes.js' if it's not in the file list).
       
       FORMAT RULES:
       1. START with a Mermaid "graph TD" block for high-level flow.
@@ -532,7 +552,7 @@ export const getSymbolDependencies = async (
     FILES IN REPO: ${fileList.slice(0, 500).join(", ")}
     REPO OVERVIEW: ${JSON.stringify(overview)}`,
     config: {
-      systemInstruction: "You are a code dependency analyzer. Return a JSON object representing a node-link graph of dependencies.",
+      systemInstruction: "You are a code dependency analyzer. Return a JSON object representing a node-link graph of dependencies. CRITICAL: DO NOT hallucinate or guess file paths, routes, or function names. ONLY use the exact file paths provided in the FILE LIST. If you are unsure about a route or file, state that you cannot find it in the provided context rather than guessing based on standard patterns (e.g., do not guess 'routes/postRoutes.js' if it's not in the file list).",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -599,7 +619,7 @@ export const analyzeFileSymbols = async (
     FILE (${filename}):
     \n\n${content}`,
     config: {
-      systemInstruction: "You are a code symbol extractor. Your goal is to identify the 'meat' of the file while skipping boilerplate and configuration. Return a JSON object with a 'symbols' array.",
+      systemInstruction: "You are a code symbol extractor. Your goal is to identify the 'meat' of the file while skipping boilerplate and configuration. Return a JSON object with a 'symbols' array. CRITICAL: DO NOT hallucinate or guess file paths, routes, or function names. ONLY use the exact names provided in the code. If you are unsure about a route or file, state that you cannot find it in the provided context rather than guessing based on standard patterns (e.g., do not guess 'routes/postRoutes.js' if it's not in the file list).",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -687,7 +707,7 @@ export const getUsageExamples = async (
     USAGES:
     ${usages.slice(0, 10).map(u => `File: ${u.file}, Line: ${u.line}, Context: ${u.context}`).join("\n")}`,
     config: {
-      systemInstruction: "You are a code usage analyzer. Return a JSON object with an 'examples' array.",
+      systemInstruction: "You are a code usage analyzer. Return a JSON object with an 'examples' array. CRITICAL: DO NOT hallucinate or guess file paths, routes, or function names. ONLY use the exact names provided in the code.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
