@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import { AppProvider } from './context/AppContext';
 import './index.css';
 
 if (import.meta.env.MODE === 'production') {
@@ -20,7 +21,9 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      <AppProvider>
+        <App />
+      </AppProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );
