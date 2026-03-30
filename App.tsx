@@ -937,6 +937,13 @@ export default function App() {
     const userQuery = query;
     const currentMessages = messages;
     setQuery('');
+    
+    // Reset textarea height
+    const textarea = document.getElementById('chat-input') as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.style.height = 'auto';
+    }
+
     setMessages(prev => [...prev, { 
       role: 'user', 
       content: userQuery,
@@ -947,7 +954,7 @@ export default function App() {
     setAttachedFiles([]); // Clear after sending
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const val = e.target.value;
     setQuery(val);
 
@@ -972,9 +979,11 @@ export default function App() {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSuggestionIndex(prev => (prev + 1) % fileSuggestions.length);
+        return;
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSuggestionIndex(prev => (prev - 1 + fileSuggestions.length) % fileSuggestions.length);
+        return;
       } else if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         const selected = fileSuggestions[suggestionIndex];
@@ -983,9 +992,16 @@ export default function App() {
         setQuery(newVal);
         handleAttachFile(selected.path);
         setShowFileSuggestions(false);
+        return;
       } else if (e.key === 'Escape') {
         setShowFileSuggestions(false);
+        return;
       }
+    }
+
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleQuery();
     }
   };
 
@@ -1994,15 +2010,22 @@ export default function App() {
                   </div>
                 </div>
               )}
-              <input 
-                type="text" 
+              <textarea 
+                id="chat-input"
                 value={query} 
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder={isDragging ? "Drop file to attach..." : "Ask about logic or use @ to mention files..."}
-                className={`w-full bg-neutral-900/50 border border-white/5 rounded-2xl py-4 pl-6 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary/50 transition-all placeholder:text-neutral-600 ${isDragging ? 'placeholder:text-brand-primary' : ''}`}
+                rows={1}
+                placeholder={isDragging ? "Drop file to attach..." : "Ask about logic or use @ to mention files... (Ctrl+Enter to send)"}
+                className={`w-full bg-neutral-900/50 border border-white/5 rounded-2xl py-4 pl-6 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary/50 transition-all placeholder:text-neutral-600 resize-none min-h-[52px] max-h-[200px] ${isDragging ? 'placeholder:text-brand-primary' : ''}`}
+                style={{ height: 'auto' }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
+                }}
               />
-              <button type="submit" disabled={isLoading} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-2.5 rounded-xl bg-white text-black shadow-xl shadow-white/10 hover:bg-neutral-200 transition-all disabled:opacity-30 active:scale-95">
+              <button type="submit" disabled={isLoading} className="absolute right-2.5 bottom-1.5 p-2.5 rounded-xl bg-white text-black shadow-xl shadow-white/10 hover:bg-neutral-200 transition-all disabled:opacity-30 active:scale-95">
                 <ChevronRight size={20} />
               </button>
             </form>
