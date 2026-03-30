@@ -39,7 +39,18 @@ let lastDbError: string | null = null;
 import dbConnect from "./lib/mongodb.js";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || "3000", 10);
+
+// Global Error Handler for Vercel stability
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("UNHANDLED ERROR:", err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ 
+    error: "A server error occurred", 
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
 
 // Middleware to ensure DB connection
 app.use(async (req, res, next) => {
@@ -49,14 +60,18 @@ app.use(async (req, res, next) => {
       next();
     } catch (err: any) {
       console.error("Database connection failed:", err);
-      res.status(500).json({ error: "Database connection failed", details: err.message });
+      // Return JSON instead of letting it crash
+      return res.status(503).json({ 
+        error: "Database Connection Issue", 
+        message: "The server could not connect to the database. Please check if MONGODB_URI is set correctly.",
+        details: err.message 
+      });
     }
   } else {
     next();
   }
 });
 
-// MongoDB Connection (Handled by dbConnect middleware)
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
   console.error("CRITICAL: MONGODB_URI environment variable is not set!");
@@ -91,62 +106,36 @@ async function startServer() {
 
   // Health check
   app.get("/api/health", async (req, res) => {
-    let driverTest = "Not attempted";
-    let indexTest = "Not attempted";
-    
-    if (MONGODB_URI) {
-      try {
-        await dbConnect();
-        const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
-        await client.connect();
-        await client.db('admin').command({ ping: 1 });
-        await client.close();
-        driverTest = "Success (Native driver connected)";
-      } catch (err: any) {
-        driverTest = `Failed: ${err.message}`;
+    try {
+      await dbConnect();
+      const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
+      
+      // Check if we can actually query a collection
+      let collections: string[] = [];
+      if (dbStatus === "connected") {
+        const listCollections = await mongoose.connection.db?.listCollections().toArray();
+        collections = listCollections?.map(c => c.name) || [];
       }
-    } else {
-      driverTest = "Failed: MONGODB_URI is missing";
+
+      res.json({
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        database: {
+          status: dbStatus,
+          collections: collections.length,
+          name: mongoose.connection.name
+        },
+        environment: process.env.NODE_ENV || "development",
+        vercel: !!process.env.VERCEL
+      });
+    } catch (err: any) {
+      res.status(503).json({
+        status: "error",
+        message: "Health check failed",
+        error: err.message,
+        vercel: !!process.env.VERCEL
+      });
     }
-
-    if (mongoose.connection.readyState === 1) {
-      try {
-        const collections = await mongoose.connection.db.listCollections({ name: 'repositories' }).toArray();
-        if (collections.length > 0) {
-          const collection = mongoose.connection.db.collection('repositories');
-          const indexes = await collection.listIndexes().toArray();
-          const hasStandardIndex = indexes.some(idx => idx.name === 'vector_index');
-          
-          let hasSearchIndex = false;
-          try {
-            // Atlas Search/Vector indexes are listed via listSearchIndexes
-            const searchIndexes = await (collection as any).listSearchIndexes().toArray();
-            hasSearchIndex = searchIndexes.some((idx: any) => idx.name === 'vector_index');
-          } catch (e) {
-            // listSearchIndexes might fail if not on Atlas or older driver, ignore
-          }
-
-          const hasVectorIndex = hasStandardIndex || hasSearchIndex;
-          indexTest = hasVectorIndex ? "Success (vector_index found)" : "Warning (vector_index NOT found)";
-        } else {
-          indexTest = "Info (repositories collection doesn't exist yet)";
-        }
-      } catch (err: any) {
-        indexTest = `Error: ${err.message}`;
-      }
-    }
-
-    res.json({ 
-      status: "ok", 
-      message: "Server is running",
-      dbState: mongoose.connection.readyState,
-      dbStateName: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState],
-      dbName: mongoose.connection.name,
-      lastError: lastDbError,
-      driverTest,
-      indexTest,
-      timestamp: new Date().toISOString()
-    });
   });
 
   // Helper to mask API key
