@@ -4,44 +4,51 @@ An advanced, AI-powered repository explorer and code analysis tool designed to h
 
 ## 🚀 Overview
 
-GitLens AI Code Visualizer combines high-performance repository exploration with state-of-the-art Large Language Models. By leveraging **Gemini 3.1 Pro/Flash** and **MongoDB Atlas Vector Search**, it provides a "RAG-first" (Retrieval-Augmented Generation) experience that allows you to chat with your code, visualize dependencies, and trace function flows in real-time.
+GitLens AI Code Visualizer combines high-performance repository exploration with state-of-the-art Large Language Models. By leveraging **Gemini 3.1 Pro/Flash**, **OpenAI**, and **MongoDB Atlas Vector Search**, it provides a "RAG-first" (Retrieval-Augmented Generation) experience that allows you to chat with your code, visualize dependencies, and trace function flows in real-time.
 
-## ✨ Implemented Features
+## ✨ Features
 
 ### 🔍 AI-Powered Exploration
 - **Private Repository Support**: Full GitHub OAuth flow for secure access to private repositories.
-- **Persistent User History**: User authentication to save indexed repositories and custom analysis notes.
-- **Semantic Search (RAG)**: Automatically chunks and embeds code using `gemini-embedding-001`. Relevant snippets are retrieved using MongoDB Atlas Vector Search to provide the AI with precise context.
-- **Deep Code Analysis**: Uses Gemini 3.1 Pro for complex reasoning and **Gemini 3 Flash** for high-speed interactions.
-- **Resilient AI Layer**: Built-in timeout handling (45s), exponential backoff for 503 errors, and automatic response sanitization.
+- **Semantic Search (RAG)**: Automatically chunks and embeds code. Relevant snippets are retrieved using MongoDB Atlas Vector Search to provide the AI with precise context.
+- **Multi-Model Support**: Choose between Gemini (Pro/Flash) and OpenAI models for your analysis.
+- **Deep Code Analysis**: Uses advanced reasoning models for complex logic explanation and high-speed models for quick interactions.
 - **Symbol Analysis**: Automatically identifies functions, classes, and variables with line-accurate explanations and parameter details.
+
+### 💬 Interactive Chat
+- **Multi-line Input**: Advanced chat interface supporting multi-line queries (use `Enter` for new lines, `Ctrl+Enter` to send).
+- **File Mentions**: Type `@` in the chat to quickly search and attach specific files to your context.
+- **Drag & Drop**: Easily attach files to the chat by dragging them from the file explorer.
+- **Source Navigation**: Click on AI-retrieved context citations to jump directly to the relevant line in the code viewer.
 
 ### 📊 Visualization & Tracing
 - **Dependency Graphs**: Interactive D3.js visualizations showing how files and symbols relate to each other.
 - **Function Flow Tracing**: Step-by-step visual tracing of data flow and call hierarchies for any function.
-- **Usage Examples**: AI-extracted real-world usage examples from across the repository.
-
-### 🛠️ Developer Experience
-- **GitHub Integration**: Seamlessly explore any public repository by URL.
-- **Source Navigation**: Click on AI-retrieved context to jump directly to the relevant line in the code viewer.
-- **Speed Mode**: Toggle between high-reasoning (Pro) and high-speed (Flash) models.
-- **Modern UI**: Responsive, high-performance interface built with React, Tailwind CSS, and Framer Motion.
-- **Auto-Scrolling Chat**: Chat interface automatically scrolls to the latest response.
-- **Instant Flow Visualization**: Logic flow diagrams render instantly without slow animations.
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: React, TypeScript, Tailwind CSS, Framer Motion, Lucide Icons.
+- **Frontend**: React 18, TypeScript, Tailwind CSS, Framer Motion, Lucide Icons.
 - **Backend**: Express.js, MongoDB Atlas (Vector Search), Vite.
-- **AI/ML**: Google Gemini API (Pro, Flash, Embeddings).
+- **AI/ML**: Google Gemini API, OpenAI API.
 - **Visualization**: D3.js, Recharts.
 
-## 📋 TODOs & Future Improvements
+## 📁 Project Structure
 
-- [ ] **AST-Aware Chunking**: Move from fixed-size chunking to Abstract Syntax Tree (AST) aware chunking for superior semantic retrieval.
-- [ ] **AI-Driven Refactoring**: Enable the AI to suggest and apply multi-file refactoring changes directly.
-- [ ] **Code Complexity Heatmaps**: Visualize "hot spots" in the codebase based on cyclomatic complexity or churn.
-- [ ] **Local Codebase Support**: Add support for analyzing local directories via file system API or secure uploads.
+- `/App.tsx`: Main application entry point and state container.
+- `/server.ts`: Express backend handling GitHub OAuth, MongoDB connections, and AI proxying.
+- `/components/`: UI components (`CodeViewer`, `FileExplorer`, `FlowVisualizer`, `Dashboard`, etc.).
+- `/services/`: API integration layers (`gemini.ts`, `github.ts`).
+
+## 🎯 Areas for Improvement (Roadmap)
+
+While fully functional, the project has several areas targeted for architectural and UX improvements:
+
+1. **State Management Refactoring**: `App.tsx` is currently a monolith handling all application state. Moving to a global state manager (like Zustand or React Context) will vastly improve maintainability.
+2. **Component Extraction**: The main layout, chat sidebar, and file explorer should be extracted from `App.tsx` into modular components.
+3. **Security Enhancements**: User API keys stored in MongoDB should be encrypted at rest.
+4. **Type Safety**: Replace remaining `any` types in the AI proxy and service layers with strict TypeScript interfaces.
+5. **AST-Aware Chunking**: Move from fixed-size chunking to Abstract Syntax Tree (AST) aware chunking for superior semantic retrieval.
+6. **Granular Indexing Progress**: Improve the "Mapping..." UI to show granular progress (e.g., "Chunking...", "Embedding...").
 
 ## 🚦 Getting Started
 
@@ -56,6 +63,7 @@ GitLens AI Code Visualizer combines high-performance repository exploration with
    - Copy `.env.example` to `.env` and configure the required variables:
      - `GEMINI_API_KEY`: Get one at [Google AI Studio](https://aistudio.google.com/app/apikey).
      - `MONGODB_URI`: Connection string for your MongoDB Atlas instance.
+     - `GITHUB_CLIENT_ID` & `GITHUB_CLIENT_SECRET`: For OAuth integration.
 4. **Run Development Server**:
    ```bash
    npm run dev
@@ -65,7 +73,7 @@ GitLens AI Code Visualizer combines high-performance repository exploration with
 
 ### MongoDB Vector Index Errors
 If you encounter `MongoServerError: PlanExecutor error... vector field is indexed with X dimensions but queried with Y dimensions`, ensure your embedding model configuration matches your MongoDB Atlas vector index dimensions.
-- **Fix**: Update the `dimensions` parameter in your embedding service (e.g., `services/gemini.ts`) to match the index configuration (e.g., `768`).
+- **Fix**: Update the `dimensions` parameter in your embedding service to match the index configuration (e.g., `768` for `text-embedding-3-small`).
 
 ---
 *Built with ❤️ for developers who want to see the big picture.*
