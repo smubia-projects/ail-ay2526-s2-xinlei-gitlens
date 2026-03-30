@@ -33,51 +33,36 @@ process.on('uncaughtException', (err) => {
 
 import { MongoClient } from 'mongodb';
 
+// MongoDB Connection Status Tracking
 let lastDbError: string | null = null;
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+import dbConnect from "./lib/mongodb.js";
 
-  // MongoDB Connection (Don't block server start)
-  const MONGODB_URI = process.env.MONGODB_URI;
-  if (!MONGODB_URI) {
-    console.error("CRITICAL: MONGODB_URI environment variable is not set!");
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware to ensure DB connection
+app.use(async (req, res, next) => {
+  if (req.url.startsWith('/api/')) {
+    try {
+      await dbConnect();
+      next();
+    } catch (err: any) {
+      console.error("Database connection failed:", err);
+      res.status(500).json({ error: "Database connection failed", details: err.message });
+    }
+  } else {
+    next();
   }
-  
-  const maskedUri = MONGODB_URI ? MONGODB_URI.replace(/:([^@]+)@/, ":****@") : "undefined";
-  console.log(`Attempting to connect to MongoDB...`);
-  console.log(`Source: ${process.env.MONGODB_URI ? 'Environment Variable (MONGODB_URI)' : 'None'}`);
-  console.log(`URI: ${maskedUri}`);
-  
-  mongoose.connection.on('connected', () => {
-    console.log("Mongoose connected to DB Cluster");
-    lastDbError = null;
-  });
+});
 
-  mongoose.connection.on('error', (err) => {
-    console.error("Mongoose connection error event:", err);
-    lastDbError = err.message;
-  });
+// MongoDB Connection (Handled by dbConnect middleware)
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error("CRITICAL: MONGODB_URI environment variable is not set!");
+}
 
-  mongoose.connection.on('disconnected', () => {
-    console.log("Mongoose disconnected");
-  });
-
-  // mongoose.set('debug', true);
-
-  console.log("Calling mongoose.connect...");
-  mongoose.connect(MONGODB_URI, { 
-    serverSelectionTimeoutMS: 15000,
-    connectTimeoutMS: 15000,
-  }).then(() => {
-    console.log("Initial MongoDB connection established successfully");
-    lastDbError = null;
-  }).catch(err => {
-    console.error("CRITICAL: Initial MongoDB connection failed!");
-    lastDbError = err.message;
-  });
-
+async function startServer() {
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
   
@@ -109,6 +94,21 @@ async function startServer() {
     let driverTest = "Not attempted";
     let indexTest = "Not attempted";
     
+    if (MONGODB_URI) {
+      try {
+        await dbConnect();
+        const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+        await client.connect();
+        await client.db('admin').command({ ping: 1 });
+        await client.close();
+        driverTest = "Success (Native driver connected)";
+      } catch (err: any) {
+        driverTest = `Failed: ${err.message}`;
+      }
+    } else {
+      driverTest = "Failed: MONGODB_URI is missing";
+    }
+
     if (mongoose.connection.readyState === 1) {
       try {
         const collections = await mongoose.connection.db.listCollections({ name: 'repositories' }).toArray();
@@ -134,20 +134,6 @@ async function startServer() {
       } catch (err: any) {
         indexTest = `Error: ${err.message}`;
       }
-    }
-
-    if (mongoose.connection.readyState !== 1) {
-      try {
-        const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
-        await client.connect();
-        await client.db('admin').command({ ping: 1 });
-        await client.close();
-        driverTest = "Success (Native driver connected, Mongoose is lagging)";
-      } catch (err: any) {
-        driverTest = `Failed: ${err.message}`;
-      }
-    } else {
-      driverTest = "Success (Mongoose connected)";
     }
 
     res.json({ 
@@ -1105,14 +1091,18 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  console.log("Checking NODE_ENV for Vite middleware...");
+  console.log("Checking environment for Vite/Static middleware...");
   if (process.env.NODE_ENV === "production") {
-    console.log("Serving static files from dist...");
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    if (!process.env.VERCEL) {
+      console.log("Serving static files from dist...");
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*all', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    } else {
+      console.log("Running on Vercel, static files handled by Vercel routing");
+    }
   } else {
     console.log("Initializing Vite middleware...");
     try {
@@ -1134,11 +1124,15 @@ async function startServer() {
   }
 
   console.log(`Starting Express server on port ${PORT}...`);
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server is listening on http://0.0.0.0:${PORT}`);
-    console.log("Health check available at /api/health");
-    console.log("SERVER READY");
-  });
+  if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server is listening on http://0.0.0.0:${PORT}`);
+      console.log("Health check available at /api/health");
+      console.log("SERVER READY");
+    });
+  }
 }
 
 startServer();
+
+export default app;
