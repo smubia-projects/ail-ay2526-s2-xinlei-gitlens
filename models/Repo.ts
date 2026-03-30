@@ -5,7 +5,7 @@ const RepoSchema = new mongoose.Schema({
   owner: { type: String, required: true },
   name: { type: String, required: true },
   branch: { type: String, required: true },
-  files: { type: Array, required: true },
+  lastCommitSha: { type: String }, // Track the latest commit indexed
   overview: { type: Object, required: true },
   stats: { type: Object, required: true },
   highlights: { type: Array, default: [] },

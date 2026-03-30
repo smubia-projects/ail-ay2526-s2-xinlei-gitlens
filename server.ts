@@ -10,6 +10,7 @@ import { GoogleGenAI } from "@google/genai";
 
 import { RepoModel } from "./models/Repo.js";
 import { SnippetModel } from "./models/Snippet.js";
+import { FileModel } from "./models/File.js";
 import { UserModel } from "./models/User.js";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -221,12 +222,12 @@ async function startServer() {
         
         const messages = Array.isArray(contents) ? contents.map((c: any) => ({
           role: c.role === 'model' ? 'assistant' : (c.role || 'user'),
-          content: c.parts ? c.parts[0].text : (c.text || JSON.stringify(c))
+          content: c.parts ? c.parts.map((p: any) => p.text).join('\n') : (c.text || JSON.stringify(c))
         })) : [{ role: 'user', content: prompt || contents }];
 
         let sysContent = typeof requestConfig?.systemInstruction === 'string' 
           ? requestConfig.systemInstruction 
-          : (requestConfig?.systemInstruction?.parts ? requestConfig.systemInstruction.parts[0].text : (requestConfig?.systemInstruction ? JSON.stringify(requestConfig.systemInstruction) : undefined));
+          : (requestConfig?.systemInstruction?.parts ? requestConfig.systemInstruction.parts.map((p: any) => p.text).join('\n') : (requestConfig?.systemInstruction ? JSON.stringify(requestConfig.systemInstruction) : undefined));
         
         if (requestConfig?.responseMimeType === 'application/json') {
           if (!sysContent) sysContent = "";
@@ -740,7 +741,11 @@ async function startServer() {
           );
         }
         
-        return res.json(repo);
+        const files = await FileModel.find({ repoId: repo._id }).select('path type sha url content -_id');
+        const repoObj = repo.toObject();
+        (repoObj as any).files = files;
+        
+        return res.json(repoObj);
       }
       return res.status(404).json({ message: "Not found" });
     } catch (err: any) {
@@ -765,7 +770,6 @@ async function startServer() {
 
       const updateData: any = { 
         $set: {
-          files, 
           overview, 
           stats, 
           highlights, 
@@ -822,6 +826,29 @@ async function startServer() {
         updateData,
         { upsert: true, returnDocument: 'after' }
       );
+
+      if (updatedRepo && files && Array.isArray(files)) {
+        const bulkOps = files.map((f: any) => ({
+          updateOne: {
+            filter: { repoId: updatedRepo._id, path: f.path },
+            update: { $set: { type: f.type, sha: f.sha, url: f.url, content: f.content } },
+            upsert: true
+          }
+        }));
+        
+        // Remove files that are no longer in the repo
+        const currentPaths = files.map((f: any) => f.path);
+        await FileModel.deleteMany({ repoId: updatedRepo._id, path: { $nin: currentPaths } });
+        
+        if (bulkOps.length > 0) {
+          // Process in batches to avoid MongoDB bulkWrite limits
+          const BATCH_SIZE = 1000;
+          for (let i = 0; i < bulkOps.length; i += BATCH_SIZE) {
+            await FileModel.bulkWrite(bulkOps.slice(i, i + BATCH_SIZE));
+          }
+        }
+      }
+
       return res.json(updatedRepo);
     } catch (err) {
       console.error("Save error:", err);
@@ -864,6 +891,7 @@ async function startServer() {
         console.log(`Owner ${req.user.login} deleting repository ${owner}/${name} entirely.`);
         await RepoModel.deleteOne({ _id: repo._id });
         await SnippetModel.deleteMany({ repoId: repo._id });
+        await FileModel.deleteMany({ repoId: repo._id });
         return res.json({ message: "Repository and its index deleted successfully" });
       }
 
@@ -880,6 +908,7 @@ async function startServer() {
         console.log(`Repository ${owner}/${name} is now orphaned. Deleting index.`);
         await RepoModel.deleteOne({ _id: repo._id });
         await SnippetModel.deleteMany({ repoId: repo._id });
+        await FileModel.deleteMany({ repoId: repo._id });
       }
 
       return res.json({ message: "Repository removed from your library" });
@@ -954,7 +983,7 @@ async function startServer() {
     try {
       // Privacy check
       const repo = await RepoModel.findOne({ owner, name });
-      if (repo && repo.isPrivate && (!req.user || repo.githubUserId !== req.user.id)) {
+      if (repo && repo.isPrivate && (!(req as any).user || repo.githubUserId !== (req as any).user.id)) {
         return res.status(403).json({ error: "Access denied to private repository" });
       }
 
@@ -990,17 +1019,63 @@ async function startServer() {
     }
   });
 
+  // Keyword search for snippets
+  app.post("/api/search/keywords", async (req, res) => {
+    const { query, owner, name, limit = 5 } = req.body;
+    
+    if (!query || !owner || !name) {
+      return res.status(400).json({ error: "Query, owner, and name are required" });
+    }
+
+    try {
+      // Privacy check
+      const repo = await RepoModel.findOne({ owner, name });
+      if (repo && repo.isPrivate && (!(req as any).user || repo.githubUserId !== (req as any).user.id)) {
+        return res.status(403).json({ error: "Access denied to private repository" });
+      }
+
+      // Simple regex search on content and purpose
+      const results = await SnippetModel.find({
+        owner,
+        name,
+        $or: [
+          { content: { $regex: query, $options: 'i' } },
+          { purpose: { $regex: query, $options: 'i' } },
+          { path: { $regex: query, $options: 'i' } }
+        ]
+      })
+      .limit(limit)
+      .select('path content purpose startLine endLine');
+
+      return res.json(results);
+    } catch (err: any) {
+      console.error("Keyword search error:", err);
+      return res.status(500).json({ error: "Keyword search failed", message: err.message });
+    }
+  });
+
   // Index snippets for a repository
   app.post("/api/repo/index-snippets", async (req, res) => {
-    const { owner, name, repoId, snippets } = req.body;
+    const { owner, name, repoId, snippets, incremental, deletedFiles } = req.body;
     
     if (!owner || !name || !repoId || !snippets || !Array.isArray(snippets)) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
     try {
-      // Clear existing snippets for this repo
-      await SnippetModel.deleteMany({ repoId });
+      if (incremental) {
+        // Find which files are being updated
+        const updatedPaths = [...new Set(snippets.map((s: any) => s.path))];
+        const pathsToRemove = [...updatedPaths, ...(deletedFiles || [])];
+        
+        // Only delete snippets for files that were modified or deleted
+        if (pathsToRemove.length > 0) {
+          await SnippetModel.deleteMany({ repoId, path: { $in: pathsToRemove } });
+        }
+      } else {
+        // Clear existing snippets for this repo (full reindex)
+        await SnippetModel.deleteMany({ repoId });
+      }
 
       // Insert new snippets in batches
       const batchSize = 50;

@@ -1,6 +1,6 @@
 
 import { Type } from "@google/genai";
-import { AnalysisResult, RepoOverview, AIConfig } from "../types.js";
+import { AnalysisResult, RepoOverview, AIConfig, ChatMessage } from "../types.js";
 
 const getInitialConfig = (): AIConfig => {
   if (typeof window !== 'undefined') {
@@ -348,6 +348,27 @@ export const getRepoOverview = async (fileList: string[], context?: string): Pro
   }
 };
 
+const truncateSnippets = (snippets: any[], maxChars: number = 15000): any[] => {
+  let currentChars = 0;
+  const truncated = [];
+  for (const s of snippets) {
+    const contentLen = s.content.length;
+    if (currentChars + contentLen > maxChars) {
+      const remaining = maxChars - currentChars;
+      if (remaining > 100) {
+        truncated.push({
+          ...s,
+          content: s.content.slice(0, remaining) + "\n... (truncated due to context limits)"
+        });
+      }
+      break;
+    }
+    truncated.push(s);
+    currentChars += contentLen;
+  }
+  return truncated;
+};
+
 export const analyzeCode = async (
   query: string,
   currentFile: { path: string; content: string } | null,
@@ -364,12 +385,14 @@ export const analyzeCode = async (
     : (currentConfig.proModel || "gemini-3.1-pro-preview");
   
   try {
+    const safeSnippets = truncateSnippets(snippets);
+    
     const contentWithLines = currentFile?.content
       ? currentFile.content.split('\n').map((line, i) => `${i + 1}: ${line}`).join('\n')
       : 'N/A';
 
-    const snippetsContext = snippets.length > 0 
-      ? snippets.map(s => `FILE: ${s.path} (Lines ${s.startLine}-${s.endLine}):\n${s.content}`).join('\n\n---\n\n')
+    const snippetsContext = safeSnippets.length > 0 
+      ? safeSnippets.map(s => `FILE: ${s.path} (Lines ${s.startLine}-${s.endLine}):\n${s.content}`).join('\n\n---\n\n')
       : 'N/A';
 
     const attachedContext = attachedFiles.length > 0
@@ -785,6 +808,35 @@ export const summarizeSnippet = async (path: string, content: string): Promise<s
   } catch (err) {
     console.warn(`Failed to summarize snippet in ${path}`, err);
     return "Code snippet.";
+  }
+};
+
+export const generateSearchQuery = async (query: string, history: { role: string; content: string }[]): Promise<string> => {
+  const model = currentConfig.flashModel || "gemini-3-flash-preview";
+  try {
+    const historyContext = history.length > 0
+      ? history.slice(-3).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n')
+      : 'No previous history.';
+
+    const response = await callGemini({
+      model: model,
+      contents: `Based on the chat history and the user's new question, generate a single, concise search query (max 15 words) that will be used for semantic search in a code repository. Focus on technical terms, function names, and specific features mentioned.
+
+HISTORY:
+${historyContext}
+
+USER QUESTION:
+${query}
+
+SEARCH QUERY:`,
+      config: {
+        systemInstruction: "You are a search expert. Your goal is to rewrite the user's question into a highly effective search query for a code repository. If the user's question is already technical and specific, return it as is. If it's a follow-up or uses pronouns, resolve them using the history.",
+      },
+    });
+    return response.text?.trim() || query;
+  } catch (err) {
+    console.warn("Failed to generate search query", err);
+    return query;
   }
 };
 

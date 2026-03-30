@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode, Settings, Copy, Check } from 'lucide-react';
+import { Github, GitBranch, Terminal, ChevronRight, Code2, Layers, Cpu, Compass, Map as MapIcon, ExternalLink, Activity, FolderOpen, Info, ArrowRightCircle, Eye, EyeOff, Network, Loader2, GitPullRequest, X, AlertTriangle, Sparkles, FileCode, Settings, Copy, Check } from 'lucide-react';
 import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
 import { Repository, RepoFile, ChatMessage, AnalysisResult, Highlight, RepoOverview, DependencyGraphData, RepoStats, AIConfig } from './types';
 import { parseRepoUrl, fetchRepoTree, fetchFileContent } from './services/github';
-import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples, summarizeFile, summarizeSnippet, setAIConfig } from './services/gemini';
+import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples, summarizeFile, summarizeSnippet, generateSearchQuery, setAIConfig } from './services/gemini';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -421,25 +421,30 @@ export default function App() {
       setUrl(targetUrl);
       setIndexingProgress({ current: 0, total: 100, stage: 'Initializing' });
 
-      // 1. Check Cache first (if not force refresh)
+      // 1. Check Cache first
       let repoId: string | null = null;
-      if (!forceRefresh) {
-        try {
-          console.time("fetchCache");
-          const headers: Record<string, string> = {
-            'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
-          };
-          const activeToken = getJwtToken();
-          if (activeToken) {
-            headers['Authorization'] = `Bearer ${activeToken}`;
-          }
-          const cacheRes = await fetch(`/api/repo?owner=${parsed.owner}&name=${parsed.name}&branch=${parsed.branch}`, { headers });
-          const contentType = cacheRes.headers.get("content-type");
+      let oldFiles: any[] = [];
+      let isIncremental = false;
+
+      try {
+        console.time("fetchCache");
+        const headers: Record<string, string> = {
+          'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+        };
+        const activeToken = getJwtToken();
+        if (activeToken) {
+          headers['Authorization'] = `Bearer ${activeToken}`;
+        }
+        const cacheRes = await fetch(`/api/repo?owner=${parsed.owner}&name=${parsed.name}&branch=${parsed.branch}`, { headers });
+        const contentType = cacheRes.headers.get("content-type");
+        
+        if (cacheRes.ok && contentType && contentType.includes("application/json")) {
+          const cachedData = await cacheRes.json();
+          repoId = cachedData._id;
+          oldFiles = cachedData.files || [];
           
-          if (cacheRes.ok && contentType && contentType.includes("application/json")) {
-            const cachedData = await cacheRes.json();
+          if (!forceRefresh) {
             console.timeEnd("fetchCache");
-            repoId = cachedData._id;
             setFiles(cachedData.files);
             setOverview(cachedData.overview);
             setStats(cachedData.stats);
@@ -453,13 +458,18 @@ export default function App() {
             console.timeEnd("handleFetchRepo");
             return;
           } else {
+            isIncremental = true;
             console.timeEnd("fetchCache");
+          }
+        } else {
+          console.timeEnd("fetchCache");
+          if (!forceRefresh) {
             console.warn("Cache fetch returned non-JSON or error:", cacheRes.status);
           }
-        } catch (cacheErr) {
-          console.timeEnd("fetchCache");
-          console.warn("Cache fetch failed, falling back to GitHub", cacheErr);
         }
+      } catch (cacheErr) {
+        console.timeEnd("fetchCache");
+        console.warn("Cache fetch failed, falling back to GitHub", cacheErr);
       }
 
       // 2. Fetch from GitHub and Analyze
@@ -581,12 +591,34 @@ export default function App() {
         // 6. Deep Indexing: Chunk and Embed files for RAG
         if (repoId) {
           console.log("Starting deep indexing for snippets...");
-          const codeFiles = tree.filter(f => 
+          let codeFiles = tree.filter(f => 
             f.type === 'blob' && 
             /\.(ts|tsx|js|jsx|py|go|java|cpp|c|h|cs|rb|php|rs|swift|kt)$/i.test(f.path) &&
             !f.path.includes('node_modules') &&
             !f.path.includes('dist')
           ).slice(0, 50); // Limit to 50 files for now to avoid rate limits
+
+          let deletedFiles: string[] = [];
+
+          if (isIncremental) {
+            const oldFileMap = new Map(oldFiles.map(f => [f.path, f.sha]));
+            const newFileMap = new Map(tree.map(f => [f.path, f.sha]));
+            
+            // Find deleted files
+            for (const path of oldFileMap.keys()) {
+              if (!newFileMap.has(path)) {
+                deletedFiles.push(path);
+              }
+            }
+
+            // Filter codeFiles to only include modified or new files
+            codeFiles = codeFiles.filter(f => {
+              const oldSha = oldFileMap.get(f.path);
+              return !oldSha || oldSha !== f.sha;
+            });
+
+            console.log(`Incremental sync: ${codeFiles.length} files to update, ${deletedFiles.length} files deleted.`);
+          }
 
           setIndexingProgress({ current: 0, total: codeFiles.length, stage: 'Deep Indexing' });
 
@@ -655,28 +687,30 @@ export default function App() {
             await new Promise(r => setTimeout(r, 200));
           }
 
-          if (allSnippets.length > 0) {
-          setIndexingProgress(prev => prev ? { ...prev, stage: 'Saving Index' } : null);
-          const headers: Record<string, string> = { 
-            'Content-Type': 'application/json',
-            'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
-          };
-          const activeToken = getJwtToken();
-          if (activeToken) {
-            headers['Authorization'] = `Bearer ${activeToken}`;
-          }
+          if (allSnippets.length > 0 || deletedFiles.length > 0) {
+            setIndexingProgress(prev => prev ? { ...prev, stage: 'Saving Index' } : null);
+            const headers: Record<string, string> = { 
+              'Content-Type': 'application/json',
+              'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+            };
+            const activeToken = getJwtToken();
+            if (activeToken) {
+              headers['Authorization'] = `Bearer ${activeToken}`;
+            }
 
-          await fetch('/api/repo/index-snippets', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              owner: parsed.owner,
-              name: parsed.name,
-              repoId,
-              snippets: allSnippets
-            })
-          });
-        }
+            await fetch('/api/repo/index-snippets', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                owner: parsed.owner,
+                name: parsed.name,
+                repoId,
+                snippets: allSnippets,
+                incremental: isIncremental,
+                deletedFiles
+              })
+            });
+          }
       }
 
       setIndexingProgress(null);
@@ -758,25 +792,24 @@ export default function App() {
       let snippets: any[] = [];
       if (repo) {
         try {
-          // Only use history for search if the current query is short (likely contains pronouns or is a follow-up)
-          // Otherwise, use the current query alone to prevent topic leakage from previous turns.
-          const contextQuery = (history.length > 0 && userQuery.trim().split(/\s+/).length < 6)
-            ? `${history.slice(-1).map(m => m.content).join(' ')} ${userQuery}`
-            : userQuery;
+          // Use AI to generate a better search query based on history
+          const searchQuery = await generateSearchQuery(userQuery, history);
+          console.log(`[AI] Generated search query: "${searchQuery}" (Original: "${userQuery}")`);
           
-          console.log(`[AI] Searching snippets for: "${contextQuery}" (Original: "${userQuery}")`);
+          const queryVector = await embedText(searchQuery);
           
-          const queryVector = await embedText(contextQuery);
-          if (queryVector.length > 0) {
-            const headers: Record<string, string> = { 
-              'Content-Type': 'application/json',
-              'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
-            };
-            const activeToken = getJwtToken();
-            if (activeToken) {
-              headers['Authorization'] = `Bearer ${activeToken}`;
-            }
-            const searchRes = await fetch('/api/search/snippets', {
+          const headers: Record<string, string> = { 
+            'Content-Type': 'application/json',
+            'X-Guest-ID': localStorage.getItem('gitlens_guest_id') || ''
+          };
+          const activeToken = getJwtToken();
+          if (activeToken) {
+            headers['Authorization'] = `Bearer ${activeToken}`;
+          }
+
+          // Run both searches in parallel for hybrid retrieval
+          const [vectorRes, keywordRes] = await Promise.all([
+            queryVector.length > 0 ? fetch('/api/search/snippets', {
               method: 'POST',
               headers,
               body: JSON.stringify({
@@ -785,17 +818,43 @@ export default function App() {
                 name: repo.name,
                 limit: 5
               })
-            });
-            if (searchRes.ok) {
-              snippets = await searchRes.json();
-              console.log(`[AI] Found ${snippets.length} relevant snippets.`);
-              setCurrentSources(snippets.map((s: any) => ({ path: s.path, startLine: s.startLine, endLine: s.endLine })));
-            } else {
-              console.warn(`[AI] Semantic search failed with status: ${searchRes.status}`);
-            }
+            }) : Promise.resolve(null),
+            fetch('/api/search/keywords', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                query: searchQuery,
+                owner: repo.owner,
+                name: repo.name,
+                limit: 3
+              })
+            })
+          ]);
+
+          let vectorSnippets = [];
+          if (vectorRes && vectorRes.ok) {
+            vectorSnippets = await vectorRes.json();
           }
+
+          let keywordSnippets = [];
+          if (keywordRes && keywordRes.ok) {
+            keywordSnippets = await keywordRes.json();
+          }
+
+          // Combine and deduplicate snippets by path and startLine
+          const combined = [...vectorSnippets, ...keywordSnippets];
+          const seen = new Set();
+          snippets = combined.filter(s => {
+            const key = `${s.path}:${s.startLine}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+          console.log(`[AI] Found ${snippets.length} relevant snippets (Vector: ${vectorSnippets.length}, Keyword: ${keywordSnippets.length}).`);
+          setCurrentSources(snippets.map((s: any) => ({ path: s.path, startLine: s.startLine, endLine: s.endLine })));
         } catch (e) {
-          console.warn("Semantic search failed", e);
+          console.warn("Hybrid search failed", e);
         }
       }
 
@@ -1366,7 +1425,7 @@ export default function App() {
                  {[
                    { id: 'dashboard', label: 'Dashboard', icon: Activity },
                    { id: 'code', label: 'Code', icon: Code2 },
-                   { id: 'map', label: 'Visual Map', icon: Map },
+                   { id: 'map', label: 'Visual Map', icon: MapIcon },
                    ...(dependencyData ? [{ id: 'logic', label: 'Logic Flow', icon: Network }] : [])
                  ].map((tab) => (
                    <button 
@@ -1666,7 +1725,7 @@ export default function App() {
             {sidebarTab === 'map' && overview && (
               <div className="bg-neutral-900/40 backdrop-blur-sm rounded-2xl border border-neutral-800 p-6 space-y-6 animate-in fade-in duration-300 shadow-2xl overflow-hidden shrink-0">
                 <div className="flex items-center gap-3 text-neutral-400">
-                  <div className="p-2 bg-neutral-400/10 rounded-xl border border-neutral-400/20"><Map size={20} /></div>
+                  <div className="p-2 bg-neutral-400/10 rounded-xl border border-neutral-400/20"><MapIcon size={20} /></div>
                   <div className="flex flex-col">
                     <span className="font-bold text-sm tracking-tight text-white">Repository Map</span>
                     <span className="text-[10px] text-neutral-500 uppercase font-mono tracking-widest">{overview.architecture_type}</span>
@@ -1742,7 +1801,7 @@ export default function App() {
                          {m.sources && m.sources.length > 0 && (
                            <div className="mt-4 pt-4 border-t border-white/5 flex flex-col gap-2.5">
                              <div className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest flex items-center gap-2">
-                               <Map size={10} className="text-brand-primary" /> Retrieved Context
+                               <MapIcon size={10} className="text-brand-primary" /> Retrieved Context
                              </div>
                              <div className="flex flex-wrap gap-1.5">
                                {m.sources.map((s, idx) => (
