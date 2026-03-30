@@ -57,9 +57,11 @@ app.use(async (req, res, next) => {
   if (req.url.startsWith('/api/')) {
     try {
       await dbConnect();
+      lastDbError = null;
       next();
     } catch (err: any) {
       console.error("Database connection failed:", err);
+      lastDbError = err.message;
       // Return JSON instead of letting it crash
       return res.status(503).json({ 
         error: "Database Connection Issue", 
@@ -108,20 +110,42 @@ async function startServer() {
   app.get("/api/health", async (req, res) => {
     try {
       await dbConnect();
-      const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
+      lastDbError = null;
+      const dbState = mongoose.connection.readyState;
+      const dbStateName = ['disconnected', 'connected', 'connecting', 'disconnecting'][dbState];
       
       // Check if we can actually query a collection
       let collections: string[] = [];
-      if (dbStatus === "connected") {
+      let indexTest = "Not attempted";
+      if (dbState === 1) {
         const listCollections = await mongoose.connection.db?.listCollections().toArray();
         collections = listCollections?.map(c => c.name) || [];
+        
+        // Simple index test for UI compatibility
+        if (collections.includes('repositories')) {
+          try {
+            const collection = mongoose.connection.db?.collection('repositories');
+            const indexes = await collection?.listIndexes().toArray();
+            const hasVectorIndex = indexes?.some(idx => idx.name === 'vector_index');
+            indexTest = hasVectorIndex ? "Success (vector_index found)" : "Warning (vector_index NOT found)";
+          } catch (e) {
+            indexTest = "Error checking indexes";
+          }
+        } else {
+          indexTest = "Info (repositories collection doesn't exist yet)";
+        }
       }
 
       res.json({
         status: "ok",
         timestamp: new Date().toISOString(),
+        dbState,
+        dbStateName,
+        dbName: mongoose.connection.name,
+        lastError: lastDbError,
+        indexTest,
         database: {
-          status: dbStatus,
+          status: dbState === 1 ? "connected" : "disconnected",
           collections: collections.length,
           name: mongoose.connection.name
         },
@@ -129,9 +153,13 @@ async function startServer() {
         vercel: !!process.env.VERCEL
       });
     } catch (err: any) {
+      lastDbError = err.message;
       res.status(503).json({
         status: "error",
         message: "Health check failed",
+        dbState: mongoose.connection.readyState,
+        dbStateName: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState],
+        lastError: lastDbError,
         error: err.message,
         vercel: !!process.env.VERCEL
       });
