@@ -761,7 +761,8 @@ export default function App() {
         answer_markdown: rawAnalysis.answer_markdown || "No explanation provided.",
         highlights: Array.isArray(rawAnalysis.highlights) ? rawAnalysis.highlights : [],
         related: Array.isArray(rawAnalysis.related) ? rawAnalysis.related : [],
-        call_tree_markdown: rawAnalysis.call_tree_markdown
+        call_tree_markdown: rawAnalysis.call_tree_markdown,
+        context_bundles: rawAnalysis.context_bundles
       };
       
       // Refine highlights if they point to line 1 but have a name

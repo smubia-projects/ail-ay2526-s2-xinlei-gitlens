@@ -244,6 +244,36 @@ const extractJson = (text: string): any => {
     return repaired;
   };
 
+  const findBalanced = (str: string, startChar: string, endChar: string) => {
+    const startIdx = str.indexOf(startChar);
+    if (startIdx === -1) return null;
+    
+    let stack: string[] = [];
+    let inString = false;
+    let escaped = false;
+    
+    for (let i = startIdx; i < str.length; i++) {
+      const char = str[i];
+      if (escaped) { escaped = false; continue; }
+      if (char === '\\') { escaped = true; continue; }
+      if (char === '"') { inString = !inString; continue; }
+      
+      if (!inString) {
+        if (char === startChar) {
+          stack.push(startChar === '{' ? '}' : ']');
+        } else if (char === endChar) {
+          if (stack.length > 0 && stack[stack.length - 1] === char) {
+            stack.pop();
+            if (stack.length === 0) {
+              return str.substring(startIdx, i + 1);
+            }
+          }
+        }
+      }
+    }
+    return null;
+  };
+
   const tryParse = (str: string) => {
     try {
       return JSON.parse(str);
@@ -266,24 +296,33 @@ const extractJson = (text: string): any => {
       }
     }
 
-    // Try to find the first '{' and last '}'
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    // Try to find balanced '{' ... '}'
+    const balancedBraces = findBalanced(text, '{', '}');
+    if (balancedBraces) {
       try {
-        return tryParse(text.substring(firstBrace, lastBrace + 1));
+        return tryParse(balancedBraces);
       } catch (e3) {
         // Fall through
       }
     }
 
-    // Try to find the first '[' and last ']'
-    const firstBracket = text.indexOf('[');
-    const lastBracket = text.lastIndexOf(']');
-    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    // Try to find balanced '[' ... ']'
+    const balancedBrackets = findBalanced(text, '[', ']');
+    if (balancedBrackets) {
       try {
-        return tryParse(text.substring(firstBracket, lastBracket + 1));
+        return tryParse(balancedBrackets);
       } catch (e4) {
+        // Fall through
+      }
+    }
+
+    // Fallback to old method if balanced finding failed (e.g. truncated)
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return tryParse(text.substring(firstBrace, lastBrace + 1));
+      } catch (e5) {
         // Fall through
       }
     }
@@ -505,7 +544,8 @@ export const analyzeCode = async (
         answer_markdown: typeof result.answer_markdown === 'string' ? result.answer_markdown : (result.answer_markdown ? JSON.stringify(result.answer_markdown) : "No explanation available."),
         highlights: result.highlights || [],
         related: result.related || [],
-        call_tree_markdown: typeof result.call_tree_markdown === 'string' ? result.call_tree_markdown : ""
+        call_tree_markdown: typeof result.call_tree_markdown === 'string' ? result.call_tree_markdown : "",
+        context_bundles: Array.isArray(result.context_bundles) ? result.context_bundles : undefined
       };
     } catch (e) {
       console.error("Failed to parse Gemini response as JSON:", jsonStr);
