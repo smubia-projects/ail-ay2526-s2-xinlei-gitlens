@@ -43,7 +43,8 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 
 // Middleware to ensure DB connection
 app.use(async (req, res, next) => {
-  const isApiRequest = req.url.includes('/api/') || req.path.includes('/api/') || req.originalUrl?.includes('/api/');
+  console.log(`DEBUG: Request URL: ${req.url}, Path: ${req.path}, Original: ${req.originalUrl}`);
+  const isApiRequest = req.url.startsWith('/api') || req.path.startsWith('/api') || req.originalUrl?.startsWith('/api');
   
   if (isApiRequest) {
     try {
@@ -1115,9 +1116,9 @@ app.use((req, res, next) => {
   });
 
   // API 404 Handler - MUST be before Vite/Static middleware
-  app.all(/^\/api\/.*$/, (req, res) => {
+  app.all(/^\/api(\/.*)?$/, (req, res) => {
     console.warn(`API route not found: ${req.method} ${req.url}`);
-    res.status(404).json({ error: "API route not found" });
+    res.status(404).json({ error: "API route not found", path: req.url });
   });
 
 async function startServer() {
@@ -1160,7 +1161,7 @@ async function startServer() {
     if (res.headersSent) return next(err);
     
     // Ensure we always return JSON for API routes or JSON-expecting clients
-    const isApiRequest = req.url.includes('/api/') || req.path.includes('/api/') || req.originalUrl?.includes('/api/');
+    const isApiRequest = req.url.startsWith('/api') || req.path.startsWith('/api') || req.originalUrl?.startsWith('/api');
     const expectsJson = req.headers.accept?.includes('application/json') || req.xhr;
     
     if (isApiRequest || expectsJson) {
