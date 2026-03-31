@@ -41,20 +41,11 @@ import dbConnect from "./lib/mongodb.js";
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
-// Global Error Handler for Vercel stability
-app.use((err: any, req: any, res: any, next: any) => {
-  console.error("UNHANDLED ERROR:", err);
-  if (res.headersSent) return next(err);
-  res.status(500).json({ 
-    error: "A server error occurred", 
-    message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-  });
-});
-
 // Middleware to ensure DB connection
 app.use(async (req, res, next) => {
-  if (req.url.startsWith('/api/')) {
+  const isApiRequest = req.url.includes('/api/') || req.path.includes('/api/') || req.originalUrl?.includes('/api/');
+  
+  if (isApiRequest) {
     try {
       await dbConnect();
       lastDbError = null;
@@ -79,32 +70,32 @@ if (!MONGODB_URI) {
   console.error("CRITICAL: MONGODB_URI environment variable is not set!");
 }
 
-async function startServer() {
-  app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
-  
-  // Middleware to extract user from JWT token
-  app.use((req: any, res, next) => {
-    const authHeader = req.headers.authorization;
-    req.guestId = req.headers['x-guest-id'];
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET) as any;
-        req.user = decoded.user;
-        req.githubToken = decoded.githubToken;
-      } catch (err) {
-        console.warn("Invalid token received");
-      }
-    }
-    next();
-  });
+// Register API routes synchronously for Vercel stability
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
 
-  // Request logger
-  app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    next();
-  });
+// Middleware to extract user from JWT token
+app.use((req: any, res, next) => {
+  const authHeader = req.headers.authorization;
+  req.guestId = req.headers['x-guest-id'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      req.user = decoded.user;
+      req.githubToken = decoded.githubToken;
+    } catch (err) {
+      console.warn("Invalid token received");
+    }
+  }
+  next();
+});
+
+// Request logger
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
 
   // Health check
   app.get("/api/health", async (req, res) => {
@@ -1123,12 +1114,13 @@ async function startServer() {
     }
   });
 
-  // API 404 Handler - MUST be before Vite middleware
+  // API 404 Handler - MUST be before Vite/Static middleware
   app.all(/^\/api\/.*$/, (req, res) => {
     console.warn(`API route not found: ${req.method} ${req.url}`);
     res.status(404).json({ error: "API route not found" });
   });
 
+async function startServer() {
   // Vite middleware for development
   console.log("Checking environment for Vite/Static middleware...");
   if (process.env.NODE_ENV === "production") {
@@ -1162,6 +1154,28 @@ async function startServer() {
     }
   }
 
+  // Global Error Handler for Vercel stability (MUST BE LAST)
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error(`UNHANDLED ERROR on ${req.method} ${req.url}:`, err);
+    if (res.headersSent) return next(err);
+    
+    // Ensure we always return JSON for API routes or JSON-expecting clients
+    const isApiRequest = req.url.includes('/api/') || req.path.includes('/api/') || req.originalUrl?.includes('/api/');
+    const expectsJson = req.headers.accept?.includes('application/json') || req.xhr;
+    
+    if (isApiRequest || expectsJson) {
+      return res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: err.message,
+        path: req.url,
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      });
+    }
+    
+    // Fallback for non-API routes
+    res.status(500).send(`A server error occurred at ${req.url}: ${err.message}`);
+  });
+
   console.log(`Starting Express server on port ${PORT}...`);
   if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
     app.listen(PORT, "0.0.0.0", () => {
@@ -1169,6 +1183,8 @@ async function startServer() {
       console.log("Health check available at /api/health");
       console.log("SERVER READY");
     });
+  } else {
+    console.log("Running in Vercel environment, skipping app.listen()");
   }
 }
 
