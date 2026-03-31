@@ -39,6 +39,7 @@ let lastDbError: string | null = null;
 import dbConnect from "./lib/mongodb.js";
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Vercel)
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 // Middleware to ensure DB connection
@@ -403,11 +404,15 @@ app.use((req, res, next) => {
     if (!code) return res.status(400).send("No code provided");
     console.log(`OAuth callback received with code: ${code.toString().substring(0, 5)}...`);
 
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const redirect_uri = `${baseUrl}/api/auth/github/callback`;
+
     try {
       const response = await axios.post("https://github.com/login/oauth/access_token", {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
+        redirect_uri,
       }, {
         headers: { 
           Accept: "application/json",
