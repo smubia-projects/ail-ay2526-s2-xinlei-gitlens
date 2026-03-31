@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -22,6 +21,7 @@ dotenv.config();
 
 console.log("SERVER STARTING...");
 console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("VERCEL:", process.env.VERCEL);
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -1139,6 +1139,8 @@ async function startServer() {
     console.log("Initializing Vite middleware...");
     try {
       console.log("Creating Vite server...");
+      const viteModuleName = "vite";
+      const { createServer: createViteServer } = await import(viteModuleName);
       const vite = await createViteServer({
         server: { 
           middlewareMode: true,
