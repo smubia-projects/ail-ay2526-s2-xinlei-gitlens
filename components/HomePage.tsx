@@ -113,6 +113,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
       if (res.ok) {
         const data = await res.json();
         setUserRepos(data);
+      } else if (res.status === 401) {
+        console.warn("GitHub token expired or invalid, logging out...");
+        onLogoutGitHub();
       } else {
         const errData = await res.json();
         setUserReposError(errData.details || errData.error || `Error ${res.status}`);

@@ -125,7 +125,7 @@ async function startServer() {
         if (collections.includes('repositories')) {
           try {
             const collection = mongoose.connection.db?.collection('repositories');
-            const indexes = await collection?.listIndexes().toArray();
+            const indexes = await collection?.listSearchIndexes().toArray();
             const hasVectorIndex = indexes?.some(idx => idx.name === 'vector_index');
             indexTest = hasVectorIndex ? "Success (vector_index found)" : "Warning (vector_index NOT found)";
           } catch (e) {
@@ -438,7 +438,7 @@ async function startServer() {
       // Get user info
       const userRes = await axios.get("https://api.github.com/user", {
         headers: { 
-          Authorization: `token ${access_token}`,
+          Authorization: `Bearer ${access_token}`,
           "User-Agent": "GitLens-App"
         }
       });
@@ -501,15 +501,37 @@ async function startServer() {
     }
   });
 
-  app.get("/api/auth/me", (req: any, res) => {
+  app.get("/api/auth/me", async (req: any, res) => {
     console.log("Auth check request received.");
     
-    if (req.user) {
-      console.log(`Auth check: User ${req.user.login} is logged in.`);
-      res.json({ 
-        user: req.user,
-        token: req.githubToken
-      });
+    if (req.user && req.githubToken) {
+      try {
+        // Verify the token is still valid with GitHub
+        await axios.get("https://api.github.com/user", {
+          headers: { 
+            Authorization: `Bearer ${req.githubToken}`,
+            "User-Agent": "GitLens-App"
+          }
+        });
+        
+        console.log(`Auth check: User ${req.user.login} is logged in and token is valid.`);
+        res.json({ 
+          user: req.user,
+          token: req.githubToken
+        });
+      } catch (err: any) {
+        if (err.response && err.response.status === 401) {
+          console.log("Auth check: GitHub token is expired or invalid.");
+          res.status(401).json({ error: "GitHub token expired" });
+        } else {
+          console.error("Auth check: Error verifying token with GitHub:", err.message);
+          // Other errors (e.g., rate limit), assume token is still good
+          res.json({ 
+            user: req.user,
+            token: req.githubToken
+          });
+        }
+      }
     } else {
       console.log("Auth check: No active session found.");
       res.status(401).json({ error: "Not authenticated" });
@@ -528,7 +550,7 @@ async function startServer() {
     try {
       const response = await axios.get("https://api.github.com/user/installations", {
         headers: { 
-          Authorization: `token ${req.githubToken}`,
+          Authorization: `Bearer ${req.githubToken}`,
           "User-Agent": "GitLens-App",
           "Accept": "application/vnd.github.v3+json"
         }
@@ -556,7 +578,7 @@ async function startServer() {
         console.log(`Fetching page ${page}...`);
         const response = await axios.get("https://api.github.com/user/repos", {
           headers: { 
-            Authorization: `token ${req.githubToken}`,
+            Authorization: `Bearer ${req.githubToken}`,
             "User-Agent": "GitLens-App"
           },
           params: {
@@ -601,7 +623,7 @@ async function startServer() {
       const errorData = err.response?.data;
       const errorMessage = typeof errorData === 'object' ? JSON.stringify(errorData) : (errorData || err.message);
       console.error("Failed to fetch user repos:", errorMessage);
-      res.status(500).json({ 
+      res.status(err.response?.status || 500).json({ 
         error: "Failed to fetch repositories from GitHub",
         details: err.response?.data?.message || err.message
       });
@@ -787,7 +809,7 @@ async function startServer() {
         try {
           console.log(`Verifying permissions for ${req.user.login} on ${owner}/${name}...`);
           const ghRes = await axios.get(`https://api.github.com/repos/${owner}/${name}`, {
-            headers: { Authorization: `token ${req.githubToken}` }
+            headers: { Authorization: `Bearer ${req.githubToken}` }
           });
           
           const permissions = ghRes.data.permissions;
@@ -993,7 +1015,7 @@ async function startServer() {
       const results = await SnippetModel.aggregate([
         {
           $vectorSearch: {
-            index: "snippet_vector_index",
+            index: "vector_index",
             path: "embedding",
             queryVector: vector,
             numCandidates: 100,

@@ -25,10 +25,14 @@ export const parseRepoUrl = (url: string): Repository | null => {
 export const fetchRepoTree = async (repo: Repository, token?: string): Promise<RepoFile[]> => {
   const headers: Record<string, string> = {};
   if (token) {
-    headers['Authorization'] = `token ${token}`;
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   const repoRes = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}`, { headers });
+  
+  if (repoRes.status === 401) {
+    throw new Error('GitHub token expired or invalid. Please reconnect your GitHub account.');
+  }
   
   if (repoRes.status === 403) {
     throw new Error('GitHub API rate limit exceeded. Please try again later.');
@@ -69,7 +73,7 @@ export const fetchRepoTree = async (repo: Repository, token?: string): Promise<R
 export const fetchFileContent = async (repo: Repository, path: string, token?: string): Promise<{ content: string; isImage: boolean; downloadUrl?: string }> => {
   const headers: Record<string, string> = {};
   if (token) {
-    headers['Authorization'] = `token ${token}`;
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   const response = await fetch(
@@ -77,6 +81,7 @@ export const fetchFileContent = async (repo: Repository, path: string, token?: s
     { headers }
   );
   if (!response.ok) {
+    if (response.status === 401) throw new Error('GitHub token expired or invalid. Please reconnect your GitHub account.');
     if (response.status === 403) throw new Error('API rate limit exceeded.');
     throw new Error(`Failed to fetch file content: ${response.status} ${response.statusText || ''}`);
   }

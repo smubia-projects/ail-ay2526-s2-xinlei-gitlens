@@ -14,7 +14,7 @@ const SnippetSchema = new mongoose.Schema({
 
 // Index for vector search
 // Note: The actual Atlas Vector Search index is created in the MongoDB Atlas UI,
-// but we'll name it 'snippet_vector_index' to match our code.
+// but we'll name it 'vector_index' to match our code.
 SnippetSchema.index({ repoId: 1, path: 1 });
 
 export const SnippetModel = mongoose.model('Snippet', SnippetSchema);

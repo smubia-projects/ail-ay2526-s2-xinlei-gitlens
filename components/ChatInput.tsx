@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { ChevronRight, FileCode } from 'lucide-react';
-import { useAppStore } from '../store/useAppStore';
+import { useAppContext } from '../context/AppContext';
 
 interface ChatInputProps {
   handleQuery: () => void;
@@ -16,7 +16,7 @@ export function ChatInput({ handleQuery, handleAttachFile, isDragging }: ChatInp
     showFileSuggestions, setShowFileSuggestions,
     suggestionIndex, setSuggestionIndex,
     files
-  } = useAppStore();
+  } = useAppContext();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const val = e.target.value;
