@@ -247,7 +247,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
             <div className="flex items-center gap-3">
               <div className="p-1 bg-brand-primary/20 rounded-xl border border-brand-primary/30 overflow-hidden">
                 <img 
-                  src="https://chatgpt.com/backend-api/estuary/public_content/enc/eyJpZCI6Im1fNjljNDE3YzcxMDk4ODE5MWJlNmM2YmIzMDVjMTc5MWM6ZmlsZV8wMDAwMDAwMDI2Yjg3MWZhOWMzMDRmZjBkMTc3NDkzZiIsInRzIjoiMjA1MzciLCJwIjoicHlpIiwiY2lkIjoiMSIsInNpZyI6ImM3MzUyODUyNThmMDIxMWVjNzFjNWMwYzkxYTNiNjYxYzkxN2Y3MDY2YjYwMmU2MjY4MjI4MzJlYmE0MWZlZTMiLCJ2IjoiMCIsImdpem1vX2lkIjpudWxsLCJjcyI6bnVsbCwiY2RuIjpudWxsLCJjcCI6bnVsbCwibWEiOm51bGx9" 
+                  src="https://lh3.googleusercontent.com/d/1BsnWw-CATwkex6B7siv_WaRHFDu_M5o9" 
                   alt="GitLens Logo" 
                   className="h-8 w-8 object-contain"
                   referrerPolicy="no-referrer"
