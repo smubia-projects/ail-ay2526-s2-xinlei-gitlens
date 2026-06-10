@@ -1,6 +1,7 @@
 
 import { Type } from "@google/genai";
 import { AnalysisResult, RepoOverview, AIConfig, ChatMessage } from "../types.js";
+import { apiFetch } from "../lib/api.js";
 
 const getInitialConfig = (): AIConfig => {
   if (typeof window !== 'undefined') {
@@ -184,7 +185,7 @@ async function callGemini(params: any, maxRetries = 3): Promise<any> {
   
   if (token) {
     console.log(`[AI] Calling Backend Proxy API - Provider: ${currentConfig.provider}`);
-    const response = await fetch('/api/ai/proxy', {
+    const response = await apiFetch('/api/ai/proxy', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -886,7 +887,7 @@ export const embedText = async (text: string): Promise<number[]> => {
   if (token) {
     console.log(`[AI] Calling Backend Proxy for Embedding`);
     try {
-      const response = await fetch('/api/ai/embed', {
+      const response = await apiFetch('/api/ai/embed', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

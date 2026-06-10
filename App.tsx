@@ -6,6 +6,8 @@ import { FileExplorer } from './components/FileExplorer';
 import { CodeViewer } from './components/CodeViewer';
 import { Repository, RepoFile, ChatMessage, AnalysisResult, Highlight, RepoOverview, DependencyGraphData, RepoStats, AIConfig } from './types';
 import { parseRepoUrl, fetchRepoTree, fetchFileContent } from './services/github';
+import { apiFetch } from './lib/api';
+import { RateLimitCTA, DemoPausedNotice } from './components/RateLimitCTA';
 import { analyzeCode, getRepoOverview, getFunctionFlow, explainSelection, getSymbolDependencies, analyzeFileSymbols, embedText, getUsageExamples, summarizeFile, summarizeSnippet, generateSearchQuery, setAIConfig } from './services/gemini';
 
 import { RepoVisualizer } from './components/RepoVisualizer';
@@ -61,6 +63,25 @@ export default function App() {
     isCheckingAuth, setIsCheckingAuth
   } = useAppContext();
 
+  // Rate-limit CTA (429) and demo-paused notice (503) — fired by apiFetch
+  const [rateLimitQueries, setRateLimitQueries] = useState<number | null>(null);
+  const [pausedMessage, setPausedMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onRateLimit = (e: Event) => {
+      setRateLimitQueries((e as CustomEvent).detail?.queriesUsed ?? 0);
+    };
+    const onPaused = (e: Event) => {
+      setPausedMessage((e as CustomEvent).detail?.message || 'This demo is temporarily paused.');
+    };
+    window.addEventListener('gitlens:rate-limit', onRateLimit);
+    window.addEventListener('gitlens:demo-paused', onPaused);
+    return () => {
+      window.removeEventListener('gitlens:rate-limit', onRateLimit);
+      window.removeEventListener('gitlens:demo-paused', onPaused);
+    };
+  }, []);
+
   useEffect(() => {
     let gid = localStorage.getItem('gitlens_guest_id');
     if (!gid) {
@@ -95,7 +116,7 @@ export default function App() {
     if (token) {
       try {
         console.log("Saving AI config to server...");
-        const res = await fetch('/api/user/config', {
+        const res = await apiFetch('/api/user/config', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -163,7 +184,7 @@ export default function App() {
     setIsCheckingAuth(true);
     try {
       console.log("Checking authentication status...");
-      const res = await fetch('/api/auth/me', {
+      const res = await apiFetch('/api/auth/me', {
         headers: {
           'Authorization': `Bearer ${activeToken}`
         }
@@ -197,7 +218,7 @@ export default function App() {
   const fetchUserConfig = async (token: string) => {
     try {
       console.log("Fetching user AI config from server...");
-      const res = await fetch('/api/user/config', {
+      const res = await apiFetch('/api/user/config', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -241,7 +262,7 @@ export default function App() {
 
   const handleConnectGitHub = async () => {
     try {
-      const res = await fetch('/api/auth/github/url');
+      const res = await apiFetch('/api/auth/github/url');
       if (res.ok) {
         const { authUrl } = await res.json();
         window.open(authUrl, 'github_oauth', 'width=600,height=700');
@@ -253,7 +274,7 @@ export default function App() {
 
   const handleInstallGitHub = async () => {
     try {
-      const res = await fetch('/api/auth/github/url');
+      const res = await apiFetch('/api/auth/github/url');
       if (res.ok) {
         const { installUrl } = await res.json();
         window.open(installUrl, 'github_install', 'width=800,height=800');
@@ -321,7 +342,7 @@ export default function App() {
         if (activeToken) {
           headers['Authorization'] = `Bearer ${activeToken}`;
         }
-        const cacheRes = await fetch(`/api/repo?owner=${parsed.owner}&name=${parsed.name}&branch=${parsed.branch}`, { headers });
+        const cacheRes = await apiFetch(`/api/repo?owner=${parsed.owner}&name=${parsed.name}&branch=${parsed.branch}`, { headers });
         const contentType = cacheRes.headers.get("content-type");
         
         if (cacheRes.ok && contentType && contentType.includes("application/json")) {
@@ -452,7 +473,7 @@ export default function App() {
           headers['Authorization'] = `Bearer ${activeToken}`;
         }
 
-        const saveRes = await fetch('/api/repo', {
+        const saveRes = await apiFetch('/api/repo', {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -584,7 +605,7 @@ export default function App() {
               headers['Authorization'] = `Bearer ${activeToken}`;
             }
 
-            await fetch('/api/repo/index-snippets', {
+            await apiFetch('/api/repo/index-snippets', {
               method: 'POST',
               headers,
               body: JSON.stringify({
@@ -695,7 +716,7 @@ export default function App() {
 
           // Run both searches in parallel for hybrid retrieval
           const [vectorRes, keywordRes] = await Promise.all([
-            queryVector.length > 0 ? fetch('/api/search/snippets', {
+            queryVector.length > 0 ? apiFetch('/api/search/snippets', {
               method: 'POST',
               headers,
               body: JSON.stringify({
@@ -705,7 +726,7 @@ export default function App() {
                 limit: 5
               })
             }) : Promise.resolve(null),
-            fetch('/api/search/keywords', {
+            apiFetch('/api/search/keywords', {
               method: 'POST',
               headers,
               body: JSON.stringify({
@@ -943,7 +964,7 @@ export default function App() {
       if (activeToken) {
         headers['Authorization'] = `Bearer ${activeToken}`;
       }
-      const searchResPromise = repo ? fetch(`/api/search/usages?symbol=${encodeURIComponent(symbolName)}&owner=${repo.owner}&name=${repo.name}`, { headers }) : Promise.resolve(new Response(JSON.stringify([])));
+      const searchResPromise = repo ? apiFetch(`/api/search/usages?symbol=${encodeURIComponent(symbolName)}&owner=${repo.owner}&name=${repo.name}`, { headers }) : Promise.resolve(new Response(JSON.stringify([])));
 
       const [data, flow, searchRes] = await Promise.all([dataPromise, flowPromise, searchResPromise]);
       data.call_flow_markdown = flow;
@@ -1063,12 +1084,18 @@ export default function App() {
           loadingTime={loadingTime} 
           progress={indexingProgress}
         />
-        <SettingsModal 
+        <SettingsModal
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
           onSave={handleSaveAIConfig}
           initialConfig={aiConfig}
         />
+        {rateLimitQueries !== null && (
+          <RateLimitCTA queriesMade={rateLimitQueries} onDismiss={() => setRateLimitQueries(null)} />
+        )}
+        {pausedMessage && (
+          <DemoPausedNotice message={pausedMessage} onDismiss={() => setPausedMessage(null)} />
+        )}
       </>
     );
   }
@@ -1598,12 +1625,18 @@ export default function App() {
         loadingTime={loadingTime} 
         progress={indexingProgress}
       />
-      <SettingsModal 
+      <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveAIConfig}
         initialConfig={aiConfig}
       />
+      {rateLimitQueries !== null && (
+        <RateLimitCTA queriesMade={rateLimitQueries} onDismiss={() => setRateLimitQueries(null)} />
+      )}
+      {pausedMessage && (
+        <DemoPausedNotice message={pausedMessage} onDismiss={() => setPausedMessage(null)} />
+      )}
     </div>
   );
 }

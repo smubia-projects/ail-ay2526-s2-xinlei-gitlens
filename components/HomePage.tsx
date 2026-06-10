@@ -3,6 +3,7 @@ import { Github, Search, Activity, Calendar, ArrowRight, Trash2, RefreshCw, GitB
 import { RepoStats, RepoOverview, AIConfig } from '../types';
 import { embedText, setAIConfig } from '../services/gemini';
 import { parseRepoUrl } from '../services/github';
+import { apiFetch } from '../lib/api';
 import { SettingsModal } from './SettingsModal';
 import { AnimatedShinyText } from './ui/AnimatedShinyText';
 import { MagicCard } from './ui/MagicCard';
@@ -54,7 +55,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
     setDbError(null);
     try {
       // Health check first
-      const healthRes = await fetch('/api/health');
+      const healthRes = await apiFetch('/api/health');
       const healthData = await healthRes.json();
       
       setIndexStatus(healthData.indexTest);
@@ -70,7 +71,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
         headers['Authorization'] = `Bearer ${jwtToken}`;
       }
       
-      const res = await fetch('/api/repos', { headers });
+      const res = await apiFetch('/api/repos', { headers });
       const contentType = res.headers.get("content-type");
       
       if (res.ok && contentType && contentType.includes("application/json")) {
@@ -105,7 +106,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
     setIsLoadingUserRepos(true);
     setUserReposError(null);
     try {
-      const res = await fetch('/api/github/user/repos', {
+      const res = await apiFetch('/api/github/user/repos', {
         headers: {
           'Authorization': `Bearer ${jwtToken}`
         }
@@ -164,7 +165,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
         headers['Authorization'] = `Bearer ${jwtToken}`;
       }
       
-      const res = await fetch(url, { 
+      const res = await apiFetch(url, {
         method: 'DELETE',
         headers
       });
@@ -215,7 +216,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectRepo, githubUser, jw
         if (jwtToken) {
           headers['Authorization'] = `Bearer ${jwtToken}`;
         }
-        const res = await fetch('/api/repos/search', {
+        const res = await apiFetch('/api/repos/search', {
           method: 'POST',
           headers,
           body: JSON.stringify({ vector, limit: 6 })
